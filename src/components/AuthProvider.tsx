@@ -9,8 +9,10 @@ import {
   useState,
 } from "react";
 import {
+  GoogleAuthProvider,
   onAuthStateChanged,
   signInWithEmailAndPassword,
+  signInWithPopup,
   signOut,
   createUserWithEmailAndPassword,
   User,
@@ -25,6 +27,7 @@ interface AuthCtx {
   loading: boolean;
   isAdmin: boolean;
   signIn: (email: string, password: string) => Promise<void>;
+  signInWithGoogle: () => Promise<void>;
   register: (email: string, password: string) => Promise<void>;
   logout: () => Promise<void>;
   refreshPlayer: () => Promise<void>;
@@ -72,6 +75,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     await createUserWithEmailAndPassword(auth, email, password);
   }
 
+  async function signInWithGoogle() {
+    const { auth } = getFirebase();
+    if (!auth) throw new Error("Firebase not configured");
+    const provider = new GoogleAuthProvider();
+    provider.setCustomParameters({ prompt: "select_account" });
+    await signInWithPopup(auth, provider);
+  }
+
   async function logout() {
     const { auth } = getFirebase();
     if (!auth) return;
@@ -98,6 +109,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     loading,
     isAdmin,
     signIn,
+    signInWithGoogle,
     register,
     logout,
     refreshPlayer,

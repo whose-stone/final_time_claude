@@ -1,7 +1,7 @@
 "use client";
 
 import { ref, get, set, update, remove, child } from "firebase/database";
-import { getFirebase, getAdminEmails } from "./firebase";
+import { getFirebase } from "./firebase";
 import {
   DEFAULT_CONFIG,
   DEFAULT_QUESTIONS,
@@ -88,11 +88,14 @@ export async function seedQuestionsIfEmpty(): Promise<void> {
 
 // ------- Players -------
 export function newPlayerState(uid: string, email: string): PlayerState {
-  const adminEmails = getAdminEmails();
+  // `isAdmin` is always false on new player creation because the RTDB rules
+  // forbid users from self-promoting. The first admin is bootstrapped by
+  // editing the `isAdmin` flag in the Firebase console; after that the admin
+  // panel itself can manage other admins.
   return {
     uid,
     email,
-    isAdmin: adminEmails.includes(email.toLowerCase()),
+    isAdmin: false,
     totalScore: 0,
     lives: DEFAULT_CONFIG.startingLives,
     currentLevel: 1,

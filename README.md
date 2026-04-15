@@ -51,23 +51,17 @@ Any user signed in with an email in `NEXT_PUBLIC_ADMIN_EMAILS` (or with
 2. Copy `.env.local.example` to `.env.local` and fill in the Firebase keys
    from the console. The project is pre-wired to
    `https://claude-acu-game-default-rtdb.firebaseio.com`.
-3. In Firebase Console, enable **Email/Password** auth and **Realtime
-   Database**. Open rules to authenticated users or something like:
-   ```json
-   {
-     "rules": {
-       "players": {
-         "$uid": {
-           ".read": "auth != null",
-           ".write": "auth != null && (auth.uid == $uid || root.child('players/' + auth.uid + '/isAdmin').val() == true)"
-         }
-       },
-       "questions": { ".read": "auth != null", ".write": "auth != null && root.child('players/' + auth.uid + '/isAdmin').val() == true" },
-       "config":    { ".read": "auth != null", ".write": "auth != null && root.child('players/' + auth.uid + '/isAdmin').val() == true" }
-     }
-   }
-   ```
-4. `npm run dev` and open http://localhost:3000
+3. In the Firebase Console enable **Authentication → Email/Password** and
+   **Authentication → Google** (the login page supports both). Enable the
+   **Realtime Database** in the same region as your project.
+4. Copy the contents of `database.rules.json` into **Realtime Database →
+   Rules** in the Firebase Console and publish.
+5. Bootstrap the first admin: create your account through the app, then in
+   **Realtime Database → Data**, open `/players/<your-uid>` and set
+   `isAdmin` to `true`. Sign out / back in — you will now be routed to
+   `/admin` on sign-in and can promote other admins from there (once you
+   extend the admin panel to do so) or keep using the console.
+6. `npm run dev` and open http://localhost:3000
 
 ## Data layout (RTDB)
 

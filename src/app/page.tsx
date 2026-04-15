@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { useAuth } from "@/components/AuthProvider";
 
 export default function LoginPage() {
-  const { user, isAdmin, player, signIn, register, loading } = useAuth();
+  const { user, isAdmin, player, signIn, signInWithGoogle, register, loading } = useAuth();
   const router = useRouter();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -82,6 +82,29 @@ export default function LoginPage() {
             </button>
           </div>
         </form>
+
+        <div style={{ textAlign: "center", fontSize: 9, margin: "16px 0 8px", color: "#666" }}>— OR —</div>
+
+        <button
+          type="button"
+          className="btn-navy"
+          style={{ width: "100%" }}
+          disabled={submitting}
+          onClick={async () => {
+            setError(null);
+            setSubmitting(true);
+            try {
+              await signInWithGoogle();
+            } catch (err: unknown) {
+              const msg = err instanceof Error ? err.message : "Google sign-in failed";
+              setError(msg);
+            } finally {
+              setSubmitting(false);
+            }
+          }}
+        >
+          Sign in with Google
+        </button>
 
         <p style={{ fontSize: 9, marginTop: 18, color: "#555" }}>
           Students receive credentials from their teacher. Admins configure the
