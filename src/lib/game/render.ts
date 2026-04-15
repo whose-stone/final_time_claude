@@ -241,8 +241,14 @@ function drawGargoyle(ctx: CanvasRenderingContext2D, g: Gargoyle, camX: number) 
     drawBoss(ctx, x, y, g);
     return;
   }
-  if (!g.alive && g.explodeTicks <= 0) return;
-  if (!g.alive && g.explodeTicks > 0) return; // particles are drawn elsewhere; suppress body
+  if (!g.alive) {
+    if (g.ascending) {
+      drawAngelGargoyle(ctx, x, y, g);
+      return;
+    }
+    // Crumble: particles are drawn elsewhere; suppress the body.
+    return;
+  }
 
   // Basic gargoyle: grey stone with red eyes
   ctx.fillStyle = "#4a4a56";
@@ -278,6 +284,110 @@ function drawGargoyle(ctx: CanvasRenderingContext2D, g: Gargoyle, camX: number) 
   ctx.fillStyle = "#3a3a44";
   ctx.fillRect(x + 6, y + g.h - 4, 10, 4);
   ctx.fillRect(x + g.w - 16, y + g.h - 4, 10, 4);
+}
+
+// A gargoyle defeated by a prayer turns into a translucent angel that
+// rises straight up and fades out over ~120 ticks.
+function drawAngelGargoyle(
+  ctx: CanvasRenderingContext2D,
+  x: number,
+  y: number,
+  g: Gargoyle,
+) {
+  const total = 120;
+  const remaining = Math.max(0, g.ascendTicks ?? 0);
+  const age = total - remaining;
+  // Fade in briefly, then fade out.
+  const fade = remaining / total; // 1 -> 0
+  const alpha = Math.max(0, Math.min(0.75, fade * 0.9));
+  const cx = x + g.w / 2;
+  const cy = y + g.h / 2;
+
+  ctx.save();
+  ctx.globalAlpha = alpha;
+
+  // Glow halo around the whole body
+  const glow = ctx.createRadialGradient(cx, cy, 4, cx, cy, g.w);
+  glow.addColorStop(0, "rgba(255, 246, 180, 0.9)");
+  glow.addColorStop(1, "rgba(255, 246, 180, 0)");
+  ctx.fillStyle = glow;
+  ctx.fillRect(x - 20, y - 20, g.w + 40, g.h + 40);
+
+  // Body silhouette — a ghostly white version of the gargoyle shape
+  ctx.fillStyle = "#ffffff";
+  ctx.fillRect(x + 4, y + 8, g.w - 8, g.h - 12);
+  // Soft shade so the silhouette has some form
+  ctx.fillStyle = "rgba(200, 220, 255, 0.9)";
+  ctx.fillRect(x + 6, y + 14, g.w - 12, g.h - 20);
+
+  // Large feathery wings (angel wings)
+  ctx.fillStyle = "#ffffff";
+  // Left wing
+  ctx.beginPath();
+  ctx.moveTo(x + 4, y + 16);
+  ctx.quadraticCurveTo(x - 20, y + 6, x - 10, y + g.h - 6);
+  ctx.quadraticCurveTo(x - 4, y + g.h - 14, x + 4, y + g.h - 8);
+  ctx.closePath();
+  ctx.fill();
+  // Right wing
+  ctx.beginPath();
+  ctx.moveTo(x + g.w - 4, y + 16);
+  ctx.quadraticCurveTo(x + g.w + 20, y + 6, x + g.w + 10, y + g.h - 6);
+  ctx.quadraticCurveTo(x + g.w + 4, y + g.h - 14, x + g.w - 4, y + g.h - 8);
+  ctx.closePath();
+  ctx.fill();
+  // Wing feather lines (subtle)
+  ctx.strokeStyle = "rgba(180, 200, 240, 0.8)";
+  ctx.lineWidth = 1;
+  for (let i = 0; i < 3; i++) {
+    const fy = y + 14 + i * 8;
+    ctx.beginPath();
+    ctx.moveTo(x + 2, fy);
+    ctx.lineTo(x - 12, fy + 4);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(x + g.w - 2, fy);
+    ctx.lineTo(x + g.w + 12, fy + 4);
+    ctx.stroke();
+  }
+
+  // Gentle face (two dot eyes, small smile) to show peace
+  ctx.fillStyle = "#0b1b3a";
+  ctx.fillRect(x + 12, y + 14, 3, 3);
+  ctx.fillRect(x + g.w - 15, y + 14, 3, 3);
+  ctx.strokeStyle = "#0b1b3a";
+  ctx.lineWidth = 1.5;
+  ctx.beginPath();
+  ctx.arc(cx, y + 22, 3, 0.1, Math.PI - 0.1);
+  ctx.stroke();
+
+  // Halo above the head, drifts up slightly with age
+  const haloLift = Math.min(8, age * 0.08);
+  ctx.strokeStyle = "#ffd447";
+  ctx.lineWidth = 3;
+  ctx.beginPath();
+  ctx.ellipse(cx, y - 2 - haloLift, 12, 4, 0, 0, Math.PI * 2);
+  ctx.stroke();
+  ctx.strokeStyle = "rgba(255, 255, 180, 0.9)";
+  ctx.lineWidth = 1.5;
+  ctx.beginPath();
+  ctx.ellipse(cx, y - 2 - haloLift, 12, 4, 0, 0, Math.PI * 2);
+  ctx.stroke();
+
+  ctx.restore();
+
+  // "+10" bonus text (drawn at full opacity so it stays readable as the
+  // angel fades) — rises with the angel.
+  ctx.save();
+  ctx.font = 'bold 14px "Press Start 2P", monospace';
+  ctx.fillStyle = "#ffd447";
+  ctx.strokeStyle = "#0b1b3a";
+  ctx.lineWidth = 3;
+  ctx.textAlign = "center";
+  const bonusY = y - 28;
+  ctx.strokeText("+10", cx + 22, bonusY);
+  ctx.fillText("+10", cx + 22, bonusY);
+  ctx.restore();
 }
 
 function drawBoss(ctx: CanvasRenderingContext2D, x: number, y: number, g: Gargoyle) {

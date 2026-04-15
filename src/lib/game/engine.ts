@@ -29,6 +29,11 @@ const PRAYER_SPEED = 8.5;
 const TEMPTATION_SPEED = 3.2;
 const HOMEWORK_SPEED = 4.5;
 const INVINCIBLE_TICKS = 90;
+// Bonus points awarded when a gargoyle is defeated with a prayer shot.
+// Stomping does NOT award bonus points — only the prayer-ascension path.
+const PRAYER_BONUS_POINTS = 10;
+// How many frames an angelic gargoyle floats upward before fading out.
+const ANGEL_TICKS = 120;
 
 let nextId = 1;
 const uid = () => nextId++;
@@ -299,6 +304,12 @@ export class Game {
           g.pos.y = this.level.groundY - g.h;
           g.sipTicks = (g.sipTicks ?? 0) + 1;
         }
+        if (g.ascending) {
+          // Float straight up, ease outward slightly, fade out over time.
+          g.pos.y -= 1.6;
+          g.ascendTicks = (g.ascendTicks ?? 0) - 1;
+          if ((g.ascendTicks ?? 0) <= 0) g.ascending = false;
+        }
         continue;
       }
 
@@ -358,10 +369,9 @@ export class Game {
   }
 
   private stompGargoyle(g: Gargoyle) {
-    // Same "defeated" effect as a prayer hit (AMEN + stone particles +
-    // score) plus a small bounce for the player.
-    this.hitGargoyle(g);
-    // Bounce: cap the downward velocity and apply an upward impulse.
+    // Stomps crumble the gargoyle into stone (no angel, no bonus score)
+    // and give the player a small bounce.
+    this.crumbleGargoyle(g);
     this.player.vel.y = JUMP_V * 0.75;
     this.player.onGround = false;
     // Short invincibility so the player doesn't get instantly clipped by
@@ -468,7 +478,7 @@ export class Game {
             rectsOverlap(proj.pos.x, proj.pos.y, proj.w, proj.h, g.pos.x, g.pos.y, g.w, g.h)
           ) {
             proj.alive = false;
-            this.hitGargoyle(g);
+            this.prayerHitGargoyle(g);
             break;
           }
         }
@@ -495,33 +505,61 @@ export class Game {
     this.projectiles = this.projectiles.filter((p) => p.alive);
   }
 
-  private hitGargoyle(g: Gargoyle) {
+  /**
+   * Handle a prayer projectile striking a gargoyle. Regular gargoyles
+   * turn into a translucent angel that floats up off the screen and the
+   * player earns a small bonus. The boss uses its own HP flow (3 prayer
+   * hits then sits down with a Diet Mountain Dew).
+   */
+  private prayerHitGargoyle(g: Gargoyle) {
     if (g.isBoss) {
-      g.bossHp = (g.bossHp ?? 1) - 1;
-      g.amenTicks = 30;
-      // A small stagger puff on a non-final hit — no stone explosion since
-      // the boss is a person, not a gargoyle.
-      if ((g.bossHp ?? 0) > 0) {
-        this.spawnTeacherStagger(g, 6);
-        return;
-      }
-      // Final hit: the teacher sits down with a Diet Mountain Dew and smiles.
-      g.alive = false;
-      g.explodeTicks = 0; // no stone explosion for a human boss
-      g.amenTicks = 160;
-      g.sitting = true;
-      g.sipTicks = 0;
-      g.vel = { x: 0, y: 0 };
-      this.stats.gargoylesDefeated++;
-      this.bossDefeated = true;
-      this.onEvent({ type: "gargoyle_defeated" });
+      this.bossPrayerHit(g);
       return;
     }
+    g.alive = false;
+    g.ascending = true;
+    g.ascendTicks = ANGEL_TICKS;
+    g.amenTicks = 80;
+    // Freeze any sideways drift so the angel rises straight up.
+    g.vel.x = 0;
+    g.vel.y = 0;
+    this.stats.score += PRAYER_BONUS_POINTS;
+    this.stats.gargoylesDefeated++;
+    this.onEvent({ type: "gargoyle_defeated" });
+  }
+
+  /**
+   * Handle the player landing on top of a gargoyle (Mario-style stomp).
+   * The gargoyle crumbles into stone pieces with an AMEN popup. No bonus
+   * score — that's reserved for prayer kills.
+   */
+  private crumbleGargoyle(g: Gargoyle) {
     g.alive = false;
     g.explodeTicks = 45;
     g.amenTicks = 80;
     this.spawnExplosion(g, 22);
     this.stats.gargoylesDefeated++;
+    this.onEvent({ type: "gargoyle_defeated" });
+  }
+
+  private bossPrayerHit(g: Gargoyle) {
+    g.bossHp = (g.bossHp ?? 1) - 1;
+    g.amenTicks = 30;
+    // A small paper-puff stagger on a non-final hit — no stone explosion
+    // since the boss is a person, not a gargoyle.
+    if ((g.bossHp ?? 0) > 0) {
+      this.spawnTeacherStagger(g, 6);
+      return;
+    }
+    // Final hit: the teacher sits down with a Diet Mountain Dew and smiles.
+    g.alive = false;
+    g.explodeTicks = 0;
+    g.amenTicks = 160;
+    g.sitting = true;
+    g.sipTicks = 0;
+    g.vel = { x: 0, y: 0 };
+    this.stats.gargoylesDefeated++;
+    this.bossDefeated = true;
     this.onEvent({ type: "gargoyle_defeated" });
   }
 

@@ -46,6 +46,13 @@ export interface Gargoyle {
   // animate a periodic sip cycle.
   sitting?: boolean;
   sipTicks?: number;
+  // When a gargoyle is defeated by a prayer projectile it doesn't crumble
+  // — it floats up as a transparent angel. `ascending` toggles the
+  // animation on and `ascendTicks` counts down to 0, at which point the
+  // angel fully fades out. Stomps still use explodeTicks for a stone
+  // crumble effect.
+  ascending?: boolean;
+  ascendTicks?: number;
 }
 
 export interface Projectile {
