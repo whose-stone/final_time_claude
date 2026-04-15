@@ -293,6 +293,12 @@ export class Game {
       if (!g.alive) {
         if (g.explodeTicks > 0) g.explodeTicks--;
         if (g.amenTicks > 0) g.amenTicks--;
+        if (g.sitting) {
+          // Keep the defeated teacher glued to the ground and advance his
+          // sip cycle so the renderer can animate a drink every ~2s.
+          g.pos.y = this.level.groundY - g.h;
+          g.sipTicks = (g.sipTicks ?? 0) + 1;
+        }
         continue;
       }
 
@@ -470,16 +476,22 @@ export class Game {
     if (g.isBoss) {
       g.bossHp = (g.bossHp ?? 1) - 1;
       g.amenTicks = 30;
-      this.spawnExplosion(g, 10);
-      if (g.bossHp <= 0) {
-        g.alive = false;
-        g.explodeTicks = 60;
-        g.amenTicks = 120;
-        this.spawnExplosion(g, 40);
-        this.stats.gargoylesDefeated++;
-        this.bossDefeated = true;
-        this.onEvent({ type: "gargoyle_defeated" });
+      // A small stagger puff on a non-final hit — no stone explosion since
+      // the boss is a person, not a gargoyle.
+      if ((g.bossHp ?? 0) > 0) {
+        this.spawnTeacherStagger(g, 6);
+        return;
       }
+      // Final hit: the teacher sits down with a Diet Mountain Dew and smiles.
+      g.alive = false;
+      g.explodeTicks = 0; // no stone explosion for a human boss
+      g.amenTicks = 160;
+      g.sitting = true;
+      g.sipTicks = 0;
+      g.vel = { x: 0, y: 0 };
+      this.stats.gargoylesDefeated++;
+      this.bossDefeated = true;
+      this.onEvent({ type: "gargoyle_defeated" });
       return;
     }
     g.alive = false;
@@ -488,6 +500,19 @@ export class Game {
     this.spawnExplosion(g, 22);
     this.stats.gargoylesDefeated++;
     this.onEvent({ type: "gargoyle_defeated" });
+  }
+
+  private spawnTeacherStagger(g: Gargoyle, count: number) {
+    // Little paper puffs (not stone) for when the boss is hit but not dead.
+    for (let i = 0; i < count; i++) {
+      this.particles.push({
+        pos: { x: g.pos.x + g.w / 2, y: g.pos.y + g.h / 3 },
+        vel: { x: (Math.random() - 0.5) * 4, y: (Math.random() - 0.6) * 4 },
+        life: 30 + Math.random() * 15,
+        color: ["#ffffff", "#eaeaea", "#ffd447"][Math.floor(Math.random() * 3)],
+        size: 3 + Math.random() * 3,
+      });
+    }
   }
 
   private spawnExplosion(g: Gargoyle, count: number) {

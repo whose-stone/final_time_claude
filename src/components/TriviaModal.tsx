@@ -27,15 +27,24 @@ export default function TriviaModal({ question, headerLabel, onResolve }: Props)
   return (
     <div style={overlay}>
       <div style={panel}>
-        <div style={{ fontSize: 9, color: "#ffd447", background: "#0b1b3a", padding: 8, borderRadius: 4 }}>
+        <div
+          style={{
+            fontSize: 13,
+            color: "#ffd447",
+            background: "#0b1b3a",
+            padding: 12,
+            borderRadius: 6,
+            letterSpacing: 1,
+          }}
+        >
           {headerLabel} · {question.points} PTS
         </div>
-        <h2 style={{ fontSize: 14, margin: "16px 0 12px", color: "#ba0c2f" }}>
+        <h2 style={{ fontSize: 22, lineHeight: 1.4, margin: "22px 0 18px", color: "#ba0c2f" }}>
           {question.prompt}
         </h2>
 
         {question.type === "multiple_choice" && question.choices ? (
-          <div style={{ display: "grid", gap: 8 }}>
+          <div style={{ display: "grid", gap: 12 }}>
             {question.choices.map((c) => {
               const isPicked = picked === c;
               const showCorrect = resolvedCorrect !== null && c === question.answer;
@@ -52,6 +61,9 @@ export default function TriviaModal({ question, headerLabel, onResolve }: Props)
                   disabled={resolvedCorrect !== null}
                   style={{
                     textAlign: "left",
+                    fontSize: 16,
+                    lineHeight: 1.4,
+                    padding: "14px 16px",
                     background: showCorrect
                       ? "#3ea35a"
                       : showWrong
@@ -80,13 +92,13 @@ export default function TriviaModal({ question, headerLabel, onResolve }: Props)
               type="text"
               value={text}
               onChange={(e) => setText(e.target.value)}
-              style={{ width: "100%", padding: 12, fontSize: 14 }}
+              style={{ width: "100%", padding: 16, fontSize: 18 }}
               disabled={resolvedCorrect !== null}
             />
             <button
               type="submit"
               className="btn-red"
-              style={{ marginTop: 10 }}
+              style={{ marginTop: 14, fontSize: 15, padding: "14px 20px" }}
               disabled={resolvedCorrect !== null}
             >
               SUBMIT
@@ -97,11 +109,13 @@ export default function TriviaModal({ question, headerLabel, onResolve }: Props)
         {resolvedCorrect !== null && (
           <div
             style={{
-              marginTop: 14,
-              padding: 10,
+              marginTop: 18,
+              padding: 14,
               background: resolvedCorrect ? "#dcefe0" : "#fde2e2",
-              border: `2px solid ${resolvedCorrect ? "#2a7a43" : "#a52020"}`,
-              fontSize: 10,
+              border: `3px solid ${resolvedCorrect ? "#2a7a43" : "#a52020"}`,
+              borderRadius: 4,
+              fontSize: 14,
+              lineHeight: 1.4,
             }}
           >
             {resolvedCorrect
@@ -128,9 +142,9 @@ const overlay: React.CSSProperties = {
 const panel: React.CSSProperties = {
   background: "#fff",
   border: "4px solid #111",
-  borderRadius: 8,
-  boxShadow: "8px 8px 0 #ba0c2f",
-  padding: 22,
-  maxWidth: 540,
+  borderRadius: 10,
+  boxShadow: "10px 10px 0 #ba0c2f",
+  padding: 28,
+  maxWidth: 620,
   width: "100%",
 };

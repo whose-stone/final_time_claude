@@ -61,14 +61,20 @@ export default function GamePage() {
   }, [player, ready]);
 
   const levelCfg = config.levels[currentLevel];
-  const levelQuestions = useMemo(
-    () => allQuestions.filter((q) => q.level === currentLevel).slice(0, levelCfg.questionCount),
-    [allQuestions, currentLevel, levelCfg.questionCount],
-  );
-  const bibleQuestions = useMemo(
-    () => allQuestions.filter((q) => q.level === currentLevel),
-    [allQuestions, currentLevel],
-  );
+  // Pen+paper pickups draw from "test" (graded) questions; falls back to
+  // any level questions if an installation's data predates categories.
+  const levelQuestions = useMemo(() => {
+    const atLevel = allQuestions.filter((q) => q.level === currentLevel);
+    const tests = atLevel.filter((q) => (q.category ?? "bible") === "test");
+    const pool = tests.length > 0 ? tests : atLevel;
+    return pool.slice(0, levelCfg.questionCount);
+  }, [allQuestions, currentLevel, levelCfg.questionCount]);
+  // Floating Bible pickups always ask "bible"-category trivia.
+  const bibleQuestions = useMemo(() => {
+    const atLevel = allQuestions.filter((q) => q.level === currentLevel);
+    const bibles = atLevel.filter((q) => (q.category ?? "bible") === "bible");
+    return bibles.length > 0 ? bibles : atLevel;
+  }, [allQuestions, currentLevel]);
 
   // Handle events from engine
   const onEvent = useCallback(
@@ -254,13 +260,19 @@ export default function GamePage() {
       <div
         style={{
           maxWidth: 960,
-          margin: "10px auto",
-          fontSize: 9,
-          color: "#333",
+          margin: "12px auto",
+          fontSize: 13,
+          lineHeight: 1.5,
+          color: "#222",
           textAlign: "center",
+          background: "#faf3e0",
+          border: "2px solid #111",
+          borderRadius: 6,
+          padding: "10px 14px",
         }}
       >
-        Controls: ← → or A/D to move · Space or ↑ to jump · F or Shift to pray · Collect 📖 for prayers · Collect 📝 for questions
+        ← → / A D to move · Space or ↑ to jump · F or Shift to pray · Collect
+        📖 for prayers · Collect 📝 for questions
       </div>
 
       {triviaQuestion && (

@@ -234,13 +234,15 @@ function drawPickup(ctx: CanvasRenderingContext2D, pk: Pickup, camX: number) {
 function drawGargoyle(ctx: CanvasRenderingContext2D, g: Gargoyle, camX: number) {
   const x = g.pos.x - camX;
   const y = g.pos.y;
-  if (!g.alive && g.explodeTicks <= 0) return;
-  if (!g.alive && g.explodeTicks > 0) return; // particles are drawn elsewhere; suppress body
-
+  // The teacher boss is a human, not a stone gargoyle — keep him drawn even
+  // after defeat so players can watch him sit down and sip a Mountain Dew.
   if (g.isBoss) {
+    if (!g.alive && !g.sitting) return;
     drawBoss(ctx, x, y, g);
     return;
   }
+  if (!g.alive && g.explodeTicks <= 0) return;
+  if (!g.alive && g.explodeTicks > 0) return; // particles are drawn elsewhere; suppress body
 
   // Basic gargoyle: grey stone with red eyes
   ctx.fillStyle = "#4a4a56";
@@ -279,70 +281,352 @@ function drawGargoyle(ctx: CanvasRenderingContext2D, g: Gargoyle, camX: number) 
 }
 
 function drawBoss(ctx: CanvasRenderingContext2D, x: number, y: number, g: Gargoyle) {
-  // Chubby bearded teacher with glasses. When defeated, he sits with Diet Mtn Dew.
-  const defeated = !g.alive;
-  // Body
-  ctx.fillStyle = "#4a6aaa";
-  ctx.fillRect(x + 6, y + 26, g.w - 12, g.h - 30);
-  // Tie
-  ctx.fillStyle = "#ba0c2f";
-  ctx.fillRect(x + g.w / 2 - 3, y + 28, 6, 20);
-  // Head
-  ctx.fillStyle = "#f1c27d";
-  ctx.fillRect(x + 10, y + 4, g.w - 20, 26);
-  // Balding top
-  ctx.fillStyle = "#6a4a2a";
-  ctx.fillRect(x + 10, y + 4, g.w - 20, 4);
-  // Beard
-  ctx.fillStyle = "#3a2a1a";
-  ctx.fillRect(x + 10, y + 18, g.w - 20, 12);
-  // Glasses
-  ctx.strokeStyle = "#000";
-  ctx.lineWidth = 2;
-  ctx.strokeRect(x + 14, y + 12, 10, 6);
-  ctx.strokeRect(x + g.w - 24, y + 12, 10, 6);
-  ctx.beginPath();
-  ctx.moveTo(x + 24, y + 15);
-  ctx.lineTo(x + g.w - 24, y + 15);
-  ctx.stroke();
-  // Mouth
-  ctx.fillStyle = "#2a1a0a";
-  ctx.fillRect(x + g.w / 2 - 6, y + 24, 12, 2);
-  // Arms
-  ctx.fillStyle = "#f1c27d";
-  ctx.fillRect(x, y + 30, 6, 18);
-  ctx.fillRect(x + g.w - 6, y + 30, 6, 18);
-  // Legs
-  ctx.fillStyle = "#222";
-  ctx.fillRect(x + 10, y + g.h - 12, 10, 12);
-  ctx.fillRect(x + g.w - 20, y + g.h - 12, 10, 12);
-
-  if (defeated) {
-    // Diet Mtn Dew can
-    ctx.fillStyle = "#b5e87a";
-    ctx.fillRect(x + g.w + 4, y + g.h - 24, 8, 18);
-    ctx.fillStyle = "#fff";
-    ctx.fillRect(x + g.w + 5, y + g.h - 22, 6, 4);
-    ctx.fillStyle = "#000";
-    ctx.font = 'bold 6px monospace';
-    ctx.fillText("DMD", x + g.w + 5, y + g.h - 10);
-    // Smile
-    ctx.strokeStyle = "#2a1a0a";
-    ctx.lineWidth = 2;
-    ctx.beginPath();
-    ctx.arc(x + g.w / 2, y + 22, 4, 0, Math.PI);
-    ctx.stroke();
+  // Chubby bearded teacher with glasses. Two states:
+  //  - standing & throwing homework (while alive)
+  //  - sitting down, smiling, and drinking a Diet Mountain Dew (after defeat)
+  if (g.sitting) {
+    drawSeatedTeacher(ctx, x, y, g);
+  } else {
+    drawStandingTeacher(ctx, x, y, g);
   }
 
-  // HP bar
+  // HP bar only while standing
   if (g.alive) {
     const hpMax = 3;
     const hp = g.bossHp ?? 0;
     ctx.fillStyle = "#000";
-    ctx.fillRect(x - 4, y - 14, g.w + 8, 8);
+    ctx.fillRect(x - 4, y - 18, g.w + 8, 10);
     ctx.fillStyle = "#ba0c2f";
-    ctx.fillRect(x - 2, y - 12, ((g.w + 4) * hp) / hpMax, 4);
+    ctx.fillRect(x - 2, y - 16, ((g.w + 4) * hp) / hpMax, 6);
   }
+}
+
+// -------- Teacher (boss) sprites --------
+
+const SKIN = "#f3cfa5";
+const SKIN_SHADE = "#d8a97b";
+const SHIRT = "#4a6aaa";
+const SHIRT_SHADE = "#2f4c86";
+const TIE = "#ba0c2f";
+const TIE_KNOT = "#8a001f";
+const PANTS = "#2a2a33";
+const PANTS_SHADE = "#14141a";
+const BEARD = "#3a2619";
+const HAIR = "#5a3a22";
+const LENS = "rgba(180, 215, 255, 0.45)";
+
+function drawStandingTeacher(ctx: CanvasRenderingContext2D, x: number, y: number, g: Gargoyle) {
+  // Boss box is 70w × 80h. Draw a proportionate man: head, neck, torso,
+  // chubby belly, pants, shoes, two arms (one holds a stack of homework).
+  const HEAD_W = 32;
+  const HEAD_X = x + (g.w - HEAD_W) / 2;
+  const HEAD_Y = y + 2;
+  const HEAD_H = 26;
+
+  // --- Legs & shoes ---
+  ctx.fillStyle = PANTS;
+  ctx.fillRect(x + 14, y + 62, 14, 16); // left leg
+  ctx.fillRect(x + g.w - 28, y + 62, 14, 16); // right leg
+  ctx.fillStyle = PANTS_SHADE;
+  ctx.fillRect(x + 14, y + 62, 14, 2);
+  ctx.fillRect(x + g.w - 28, y + 62, 14, 2);
+  ctx.fillStyle = "#111";
+  ctx.fillRect(x + 12, y + 76, 18, 4);
+  ctx.fillRect(x + g.w - 30, y + 76, 18, 4);
+
+  // --- Torso / chubby belly ---
+  // Torso widens below the shoulders to look "chubby".
+  ctx.fillStyle = SHIRT;
+  ctx.fillRect(x + 8, y + 32, g.w - 16, 30); // main shirt
+  ctx.fillRect(x + 4, y + 40, g.w - 8, 22); // belly bulge
+  ctx.fillStyle = SHIRT_SHADE;
+  ctx.fillRect(x + 4, y + 58, g.w - 8, 4); // belt shadow
+  // Belt
+  ctx.fillStyle = "#201810";
+  ctx.fillRect(x + 4, y + 60, g.w - 8, 4);
+  ctx.fillStyle = "#e0a200";
+  ctx.fillRect(x + g.w / 2 - 3, y + 60, 6, 4); // buckle
+
+  // --- Collar + tie ---
+  ctx.fillStyle = "#ffffff";
+  ctx.fillRect(x + g.w / 2 - 8, y + 28, 16, 6); // collar
+  ctx.fillStyle = TIE_KNOT;
+  ctx.fillRect(x + g.w / 2 - 4, y + 32, 8, 4); // knot
+  ctx.fillStyle = TIE;
+  ctx.beginPath();
+  ctx.moveTo(x + g.w / 2 - 4, y + 36);
+  ctx.lineTo(x + g.w / 2 + 4, y + 36);
+  ctx.lineTo(x + g.w / 2 + 6, y + 54);
+  ctx.lineTo(x + g.w / 2, y + 58);
+  ctx.lineTo(x + g.w / 2 - 6, y + 54);
+  ctx.closePath();
+  ctx.fill();
+
+  // --- Arms ---
+  // Left arm (as viewed)
+  ctx.fillStyle = SHIRT;
+  ctx.fillRect(x - 2, y + 32, 10, 22);
+  ctx.fillStyle = SKIN;
+  ctx.fillRect(x, y + 52, 8, 10); // forearm/hand
+  // Right arm (holds homework)
+  ctx.fillStyle = SHIRT;
+  ctx.fillRect(x + g.w - 8, y + 32, 10, 18);
+  ctx.fillStyle = SKIN;
+  ctx.fillRect(x + g.w - 6, y + 48, 8, 10);
+  // Stack of homework paper in right hand
+  ctx.fillStyle = "#fff";
+  ctx.fillRect(x + g.w - 2, y + 50, 10, 6);
+  ctx.strokeStyle = "#222";
+  ctx.lineWidth = 1;
+  ctx.strokeRect(x + g.w - 2, y + 50, 10, 6);
+  ctx.fillStyle = "#aaa";
+  ctx.fillRect(x + g.w, y + 52, 6, 1);
+  ctx.fillRect(x + g.w, y + 54, 6, 1);
+
+  // --- Neck ---
+  ctx.fillStyle = SKIN_SHADE;
+  ctx.fillRect(x + g.w / 2 - 5, y + 26, 10, 6);
+
+  // --- Head ---
+  drawHead(ctx, HEAD_X, HEAD_Y, HEAD_W, HEAD_H, "angry");
+}
+
+function drawSeatedTeacher(ctx: CanvasRenderingContext2D, x: number, y: number, g: Gargoyle) {
+  // Sit him on the ground: legs forward, back slightly hunched. He holds a
+  // Diet Mountain Dew can in his right hand and brings it up to his lips on
+  // a slow sip cycle. sipTicks counts up; cycle length ~120 ticks.
+  const sipCycle = 120;
+  const sipT = (g.sipTicks ?? 0) % sipCycle;
+  const sipping = sipT > 70 && sipT < 100;
+  const HEAD_W = 32;
+  const HEAD_X = x + (g.w - HEAD_W) / 2;
+  const HEAD_Y = y + 16;
+  const HEAD_H = 26;
+
+  // Ground line baseline is at y + g.h - 2 (just above feet).
+  // --- Legs stretched forward ---
+  ctx.fillStyle = PANTS;
+  // Upper leg chunks (sitting so thighs are vertical-ish, calves forward)
+  ctx.fillRect(x + 14, y + 60, 16, 14); // left thigh stub
+  ctx.fillRect(x + g.w - 30, y + 60, 16, 14); // right thigh stub
+  // Calves stretched out forward past the body (outside x range)
+  ctx.fillRect(x + 20, y + 70, 30, 10); // left calf forward
+  ctx.fillRect(x + g.w - 50, y + 70, 30, 10); // right calf forward
+  // Shoes at the end of the stretched calves
+  ctx.fillStyle = "#111";
+  ctx.fillRect(x + 46, y + 70, 12, 10);
+  ctx.fillRect(x + g.w - 22, y + 70, 12, 10);
+
+  // --- Torso (slightly hunched while sitting) ---
+  ctx.fillStyle = SHIRT;
+  ctx.fillRect(x + 6, y + 36, g.w - 12, 30);
+  ctx.fillRect(x + 2, y + 46, g.w - 4, 20); // belly bulge
+  ctx.fillStyle = SHIRT_SHADE;
+  ctx.fillRect(x + 2, y + 62, g.w - 4, 4);
+
+  // Belt
+  ctx.fillStyle = "#201810";
+  ctx.fillRect(x + 2, y + 64, g.w - 4, 4);
+  ctx.fillStyle = "#e0a200";
+  ctx.fillRect(x + g.w / 2 - 3, y + 64, 6, 4);
+
+  // --- Collar + tie (loosened while relaxing) ---
+  ctx.fillStyle = "#ffffff";
+  ctx.fillRect(x + g.w / 2 - 8, y + 34, 16, 5);
+  ctx.fillStyle = TIE_KNOT;
+  ctx.fillRect(x + g.w / 2 - 2, y + 38, 4, 3); // loose knot off-center
+  ctx.fillStyle = TIE;
+  ctx.beginPath();
+  ctx.moveTo(x + g.w / 2 - 2, y + 41);
+  ctx.lineTo(x + g.w / 2 + 2, y + 41);
+  ctx.lineTo(x + g.w / 2 + 8, y + 56);
+  ctx.lineTo(x + g.w / 2 + 3, y + 60);
+  ctx.closePath();
+  ctx.fill();
+
+  // --- Left arm resting on lap ---
+  ctx.fillStyle = SHIRT;
+  ctx.fillRect(x, y + 40, 10, 18);
+  ctx.fillStyle = SKIN;
+  ctx.fillRect(x + 4, y + 56, 8, 8);
+
+  // --- Right arm: holds Diet Mtn Dew, raising it to mouth on sip ---
+  // When sipping, the hand+can move up next to head. Otherwise rests by belly.
+  const armBaseX = x + g.w - 10;
+  const armBaseY = y + 38;
+  const canRestX = x + g.w - 2;
+  const canRestY = y + 56;
+  const canSipX = HEAD_X + HEAD_W - 8;
+  const canSipY = HEAD_Y + 12;
+  const canX = sipping ? canSipX : canRestX;
+  const canY = sipping ? canSipY : canRestY;
+  // Upper arm
+  ctx.fillStyle = SHIRT;
+  ctx.fillRect(armBaseX, armBaseY, 10, 16);
+  // Forearm (rotated toward can)
+  ctx.strokeStyle = SKIN;
+  ctx.lineWidth = 6;
+  ctx.beginPath();
+  ctx.moveTo(armBaseX + 5, armBaseY + 14);
+  ctx.lineTo(canX + 4, canY + 10);
+  ctx.stroke();
+  // Hand
+  ctx.fillStyle = SKIN_SHADE;
+  ctx.fillRect(canX - 2, canY + 8, 10, 6);
+
+  // --- Diet Mountain Dew can ---
+  drawMtnDew(ctx, canX, canY);
+
+  // --- Neck ---
+  ctx.fillStyle = SKIN_SHADE;
+  ctx.fillRect(x + g.w / 2 - 5, y + HEAD_Y - y + HEAD_H - 2, 10, 6);
+
+  // --- Head (smiling) ---
+  drawHead(ctx, HEAD_X, HEAD_Y, HEAD_W, HEAD_H, sipping ? "sipping" : "smiling");
+
+  // Little "Ahh" speech every cycle, briefly
+  if (sipT > 100 && sipT < 112) {
+    ctx.save();
+    ctx.font = 'bold 12px "Press Start 2P", monospace';
+    ctx.fillStyle = "#0b1b3a";
+    ctx.strokeStyle = "#ffd447";
+    ctx.lineWidth = 3;
+    ctx.textAlign = "center";
+    ctx.strokeText("AHH!", HEAD_X + HEAD_W / 2, HEAD_Y - 8);
+    ctx.fillText("AHH!", HEAD_X + HEAD_W / 2, HEAD_Y - 8);
+    ctx.restore();
+  }
+}
+
+type HeadMood = "angry" | "smiling" | "sipping";
+
+function drawHead(
+  ctx: CanvasRenderingContext2D,
+  x: number,
+  y: number,
+  w: number,
+  h: number,
+  mood: HeadMood,
+) {
+  // Face
+  ctx.fillStyle = SKIN;
+  ctx.fillRect(x, y, w, h);
+  ctx.fillStyle = SKIN_SHADE;
+  ctx.fillRect(x, y + h - 3, w, 3); // jawline shadow
+
+  // Bald-ish top with fringe on sides
+  ctx.fillStyle = HAIR;
+  ctx.fillRect(x - 2, y - 2, w + 4, 5); // hairline
+  ctx.fillRect(x - 2, y, 4, 12); // left temple
+  ctx.fillRect(x + w - 2, y, 4, 12); // right temple
+
+  // Ears
+  ctx.fillStyle = SKIN_SHADE;
+  ctx.fillRect(x - 3, y + 10, 3, 6);
+  ctx.fillRect(x + w, y + 10, 3, 6);
+
+  // Eyebrows
+  ctx.fillStyle = "#2a1a0a";
+  if (mood === "angry") {
+    // Angled inward
+    ctx.fillRect(x + 5, y + 7, 8, 2);
+    ctx.fillRect(x + w - 13, y + 7, 8, 2);
+    ctx.fillRect(x + 11, y + 6, 3, 2);
+    ctx.fillRect(x + w - 14, y + 6, 3, 2);
+  } else {
+    ctx.fillRect(x + 5, y + 8, 8, 2);
+    ctx.fillRect(x + w - 13, y + 8, 8, 2);
+  }
+
+  // Glasses
+  ctx.strokeStyle = "#000";
+  ctx.lineWidth = 2;
+  ctx.fillStyle = LENS;
+  ctx.fillRect(x + 4, y + 10, 9, 7);
+  ctx.strokeRect(x + 4, y + 10, 9, 7);
+  ctx.fillRect(x + w - 13, y + 10, 9, 7);
+  ctx.strokeRect(x + w - 13, y + 10, 9, 7);
+  // Bridge
+  ctx.beginPath();
+  ctx.moveTo(x + 13, y + 13);
+  ctx.lineTo(x + w - 13, y + 13);
+  ctx.stroke();
+
+  // Nose
+  ctx.fillStyle = SKIN_SHADE;
+  ctx.fillRect(x + w / 2 - 1, y + 14, 2, 4);
+
+  // Beard (wraps jaw)
+  ctx.fillStyle = BEARD;
+  ctx.fillRect(x - 1, y + 17, w + 2, h - 17);
+  // Moustache
+  ctx.fillRect(x + 6, y + 17, w - 12, 3);
+
+  // Mouth region (sit inside beard)
+  if (mood === "angry") {
+    ctx.fillStyle = "#1a1a1a";
+    ctx.fillRect(x + w / 2 - 6, y + 22, 12, 3); // flat frown-ish
+    ctx.fillStyle = "#3a2a1a";
+    ctx.fillRect(x + w / 2 - 8, y + 25, 16, 2); // shadow
+  } else if (mood === "smiling") {
+    // Happy upward curve
+    ctx.strokeStyle = "#1a1a1a";
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.arc(x + w / 2, y + 21, 6, 0.1, Math.PI - 0.1);
+    ctx.stroke();
+    // Teeth glimmer
+    ctx.fillStyle = "#ffffff";
+    ctx.fillRect(x + w / 2 - 4, y + 22, 8, 2);
+  } else {
+    // Sipping — pursed mouth around can
+    ctx.fillStyle = "#1a1a1a";
+    ctx.beginPath();
+    ctx.ellipse(x + w / 2, y + 22, 4, 3, 0, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  // Cheeks (rosy when smiling or sipping)
+  if (mood !== "angry") {
+    ctx.fillStyle = "rgba(220, 80, 80, 0.35)";
+    ctx.fillRect(x + 3, y + 18, 5, 3);
+    ctx.fillRect(x + w - 8, y + 18, 5, 3);
+  }
+}
+
+function drawMtnDew(ctx: CanvasRenderingContext2D, x: number, y: number) {
+  // Diet Mountain Dew can (pale-yellow / silver, green stripe).
+  // The SDK-canvas can-art is intentionally simplified/stylized.
+  const w = 10;
+  const h = 20;
+  // Body
+  ctx.fillStyle = "#efe77a";
+  ctx.fillRect(x, y, w, h);
+  // Silver top lid
+  ctx.fillStyle = "#cfcfcf";
+  ctx.fillRect(x, y, w, 2);
+  ctx.fillStyle = "#8a8a8a";
+  ctx.fillRect(x, y + 2, w, 1);
+  // Pull tab
+  ctx.fillStyle = "#dcdcdc";
+  ctx.fillRect(x + 2, y, 3, 2);
+  // Green diagonal stripe (Mtn Dew swoosh)
+  ctx.fillStyle = "#6fbf3a";
+  ctx.beginPath();
+  ctx.moveTo(x, y + 8);
+  ctx.lineTo(x + w, y + 4);
+  ctx.lineTo(x + w, y + 10);
+  ctx.lineTo(x, y + 14);
+  ctx.closePath();
+  ctx.fill();
+  // "DMD" label
+  ctx.fillStyle = "#0a3b1a";
+  ctx.font = 'bold 6px "Press Start 2P", monospace';
+  ctx.fillText("DMD", x + 1, y + 18);
+  // Outline
+  ctx.strokeStyle = "#5a5a2a";
+  ctx.lineWidth = 1;
+  ctx.strokeRect(x, y, w, h);
 }
 
 function drawProjectile(ctx: CanvasRenderingContext2D, p: Projectile, camX: number) {

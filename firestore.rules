@@ -1,0 +1,20 @@
+rules_version = '2';
+
+// This project uses Firebase Realtime Database (see database.rules.json),
+// NOT Cloud Firestore. Every Firebase project ships with a Firestore
+// database enabled by default though, and the default "public" / "test
+// mode" rules trigger the console warning: "Your security rules are
+// defined as public, so anyone can steal, modify, or delete data in your
+// database."
+//
+// These rules close that off by denying all reads and writes to every
+// Firestore document, from every client and every auth state. If you
+// ever intentionally start using Firestore, relax these rules explicitly
+// at that time.
+service cloud.firestore {
+  match /databases/{database}/documents {
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

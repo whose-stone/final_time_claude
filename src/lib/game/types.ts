@@ -40,6 +40,12 @@ export interface Gargoyle {
   bossHp?: number;
   onGround?: boolean;
   jumpCooldown?: number;
+  // When the teacher boss is defeated he doesn't explode — he sits down
+  // and drinks a Diet Mountain Dew. This flag marks that animation state
+  // so the renderer can keep drawing him in a happy seated pose and
+  // animate a periodic sip cycle.
+  sitting?: boolean;
+  sipTicks?: number;
 }
 
 export interface Projectile {

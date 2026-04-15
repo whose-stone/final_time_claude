@@ -31,37 +31,37 @@ export default function HUD({
     <div
       style={{
         maxWidth: 960,
-        margin: "0 auto 8px",
+        margin: "0 auto 10px",
         background: "#0b1b3a",
         color: "#ffd447",
-        border: "3px solid #111",
-        borderRadius: 6,
-        padding: "8px 12px",
+        border: "4px solid #111",
+        borderRadius: 8,
+        padding: "14px 18px",
         display: "flex",
         justifyContent: "space-between",
         flexWrap: "wrap",
-        gap: 8,
-        fontSize: 10,
+        gap: 14,
+        fontSize: 16,
       }}
     >
-      <HudItem label="GRADE" value={grade} />
-      <HudItem label="LVL" value={`${levelId} ${LEVEL_NAMES[levelId]}`} />
+      <HudItem label="GRADE" value={grade} big />
+      <HudItem label="LEVEL" value={`${levelId} ${LEVEL_NAMES[levelId]}`} />
       <HudItem label="NEXT Q" value={`${Math.min(nextQuestion, totalQuestions)}/${totalQuestions}`} />
       <HudItem label="PRAYERS" value={`\uD83D\uDE4F x${prayers}`} />
       <HudItem
         label="LIVES"
-        value={limitedLives ? `\u2764 x${Math.max(0, lives)}` : "∞"}
+        value={limitedLives ? `\u2764 x${Math.max(0, lives)}` : "\u221E"}
       />
       <HudItem label="SCORE" value={`${correct} / ${attempted}`} />
     </div>
   );
 }
 
-function HudItem({ label, value }: { label: string; value: string }) {
+function HudItem({ label, value, big }: { label: string; value: string; big?: boolean }) {
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
-      <span style={{ fontSize: 7, color: "#aaa" }}>{label}</span>
-      <span>{value}</span>
+    <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+      <span style={{ fontSize: 11, color: "#c8c8d8", letterSpacing: 1 }}>{label}</span>
+      <span style={{ fontSize: big ? 26 : 16, lineHeight: 1 }}>{value}</span>
     </div>
   );
 }

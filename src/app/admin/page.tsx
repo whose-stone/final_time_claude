@@ -8,6 +8,7 @@ import {
   listPlayers,
   loadGameConfig,
   loadQuestions,
+  reseedQuestions,
   resetPlayer,
   saveGameConfig,
   saveQuestion,
@@ -23,6 +24,7 @@ import {
   letterGrade,
   PlayerState,
   Question,
+  QuestionCategory,
 } from "@/lib/types";
 import { downloadPlayerPdf } from "@/lib/pdf";
 
@@ -252,17 +254,37 @@ function QuestionsPanel({
 }) {
   const [editing, setEditing] = useState<Question | null>(null);
   const [filterLevel, setFilterLevel] = useState<LevelId | 0>(0);
+  const [filterCategory, setFilterCategory] = useState<QuestionCategory | "all">("all");
+  const [reseeding, setReseeding] = useState(false);
 
   function blank(): Question {
     return {
       id: `q-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
       level: filterLevel || 1,
+      category: filterCategory === "all" ? "test" : filterCategory,
       type: "multiple_choice",
       prompt: "",
       choices: ["", "", "", ""],
       answer: "",
       points: defaultPoints,
     };
+  }
+
+  async function handleReseed() {
+    const ok = confirm(
+      "Reseed ALL questions from the built-in defaults?\n\n" +
+        "This DELETES every existing question (Bible + test) and replaces them " +
+        "with the default Bible trivia + ACU-history test questions. " +
+        "Student progress is not affected.",
+    );
+    if (!ok) return;
+    setReseeding(true);
+    try {
+      await reseedQuestions();
+      await onReload();
+    } finally {
+      setReseeding(false);
+    }
   }
 
   async function handleSave() {
@@ -290,11 +312,16 @@ function QuestionsPanel({
     await onReload();
   }
 
-  const filtered = filterLevel === 0 ? questions : questions.filter((q) => q.level === filterLevel);
+  const normalized = questions.map((q) => ({ ...q, category: q.category ?? "bible" }));
+  const filtered = normalized.filter((q) => {
+    if (filterLevel !== 0 && q.level !== filterLevel) return false;
+    if (filterCategory !== "all" && q.category !== filterCategory) return false;
+    return true;
+  });
 
   return (
     <>
-      <div className="btn-row" style={{ marginBottom: 10 }}>
+      <div className="btn-row" style={{ marginBottom: 10, alignItems: "center" }}>
         <label style={{ fontSize: 10 }}>Level:</label>
         <select value={filterLevel} onChange={(e) => setFilterLevel(parseInt(e.target.value, 10) as 0 | LevelId)}>
           <option value={0}>All</option>
@@ -304,8 +331,25 @@ function QuestionsPanel({
             </option>
           ))}
         </select>
+        <label style={{ fontSize: 10 }}>Category:</label>
+        <select
+          value={filterCategory}
+          onChange={(e) => setFilterCategory(e.target.value as QuestionCategory | "all")}
+        >
+          <option value="all">All</option>
+          <option value="bible">📖 Bible (power-up)</option>
+          <option value="test">📝 Test (graded)</option>
+        </select>
         <button className="btn-red" onClick={() => setEditing(blank())}>
           + Add Question
+        </button>
+        <button
+          className="btn-navy"
+          onClick={handleReseed}
+          disabled={reseeding}
+          title="Wipe and reload the built-in defaults (Bible trivia + ACU history)"
+        >
+          {reseeding ? "Reseeding..." : "Reseed Defaults"}
         </button>
       </div>
 
@@ -314,6 +358,7 @@ function QuestionsPanel({
           <thead>
             <tr>
               <th>Level</th>
+              <th>Category</th>
               <th>Type</th>
               <th>Prompt</th>
               <th>Answer</th>
@@ -325,6 +370,7 @@ function QuestionsPanel({
             {filtered.map((q) => (
               <tr key={q.id}>
                 <td>{q.level}. {LEVEL_NAMES[q.level]}</td>
+                <td>{q.category === "bible" ? "📖 Bible" : "📝 Test"}</td>
                 <td>{q.type === "multiple_choice" ? "MC" : "Text"}</td>
                 <td style={{ maxWidth: 400 }}>{q.prompt}</td>
                 <td>{q.answer}</td>
@@ -381,6 +427,17 @@ function QuestionEditor({
               {([1, 2, 3, 4, 5] as LevelId[]).map((l) => (
                 <option key={l} value={l}>{l}. {LEVEL_NAMES[l]}</option>
               ))}
+            </select>
+          </Row>
+          <Row label="Category">
+            <select
+              value={question.category ?? "bible"}
+              onChange={(e) =>
+                onChange({ ...question, category: e.target.value as QuestionCategory })
+              }
+            >
+              <option value="bible">📖 Bible power-up (floating Bible pickup)</option>
+              <option value="test">📝 Test question (pen &amp; paper pickup)</option>
             </select>
           </Row>
           <Row label="Type">
