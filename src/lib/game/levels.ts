@@ -68,8 +68,7 @@ function makeGround(): Platform[] {
 function platformSet(level: LevelId): Platform[] {
   const base = makeGround();
   const plats: Platform[] = [];
-  // Add some floating platforms at varied heights for variety
-  const configs: Array<[number, number, number]> = {
+  const configsByLevel: Record<LevelId, Array<[number, number, number]>> = {
     1: [
       [500, 380, 120],
       [900, 320, 120],
@@ -109,9 +108,8 @@ function platformSet(level: LevelId): Platform[] {
       [2200, 360, 140],
       [2700, 310, 120],
     ],
-  }[level] as Array<[number, number, number]>;
-
-  for (const [x, y, w] of configs) {
+  };
+  for (const [x, y, w] of configsByLevel[level]) {
     plats.push({ x, y, w, h: 18, kind: "platform" });
   }
   return [...base, ...plats];

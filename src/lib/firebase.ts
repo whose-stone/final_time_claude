@@ -2,7 +2,7 @@
 
 import { initializeApp, getApps, FirebaseApp } from "firebase/app";
 import { getAuth, Auth } from "firebase/auth";
-import { getFirestore, Firestore } from "firebase/firestore";
+import { getDatabase, Database } from "firebase/database";
 
 const firebaseConfig = {
   apiKey: process.env.NEXT_PUBLIC_FIREBASE_API_KEY,
@@ -11,11 +11,14 @@ const firebaseConfig = {
   storageBucket: process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET,
   messagingSenderId: process.env.NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID,
   appId: process.env.NEXT_PUBLIC_FIREBASE_APP_ID,
+  databaseURL:
+    process.env.NEXT_PUBLIC_FIREBASE_DATABASE_URL ||
+    "https://claude-acu-game-default-rtdb.firebaseio.com",
 };
 
 let app: FirebaseApp | null = null;
 let auth: Auth | null = null;
-let db: Firestore | null = null;
+let db: Database | null = null;
 
 export function getFirebase() {
   if (typeof window === "undefined") {
@@ -24,7 +27,7 @@ export function getFirebase() {
   if (!app) {
     app = getApps().length ? getApps()[0] : initializeApp(firebaseConfig);
     auth = getAuth(app);
-    db = getFirestore(app);
+    db = getDatabase(app);
   }
   return { app, auth: auth!, db: db! };
 }

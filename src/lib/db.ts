@@ -1,18 +1,6 @@
 "use client";
 
-import {
-  collection,
-  doc,
-  getDoc,
-  getDocs,
-  setDoc,
-  updateDoc,
-  deleteDoc,
-  query,
-  where,
-  addDoc,
-  serverTimestamp,
-} from "firebase/firestore";
+import { ref, get, set, update, remove, child } from "firebase/database";
 import { getFirebase, getAdminEmails } from "./firebase";
 import {
   DEFAULT_CONFIG,
@@ -24,17 +12,24 @@ import {
   Question,
 } from "./types";
 
-// ------- Game config -------
-const CONFIG_DOC = "config/game";
+// Realtime Database paths:
+//   /config/game                     -> GameConfig
+//   /questions/<id>                  -> Question
+//   /players/<uid>                   -> PlayerState
 
+// ------- Game config -------
 export async function loadGameConfig(): Promise<GameConfig> {
   const { db } = getFirebase();
   if (!db) return DEFAULT_CONFIG;
   try {
-    const snap = await getDoc(doc(db, "config", "game"));
+    const snap = await get(ref(db, "config/game"));
     if (!snap.exists()) return DEFAULT_CONFIG;
-    const data = snap.data() as Partial<GameConfig>;
-    return { ...DEFAULT_CONFIG, ...data, levels: { ...DEFAULT_CONFIG.levels, ...(data.levels || {}) } };
+    const data = snap.val() as Partial<GameConfig>;
+    return {
+      ...DEFAULT_CONFIG,
+      ...data,
+      levels: { ...DEFAULT_CONFIG.levels, ...(data.levels || {}) },
+    };
   } catch (err) {
     console.warn("loadGameConfig failed, using defaults", err);
     return DEFAULT_CONFIG;
@@ -44,17 +39,22 @@ export async function loadGameConfig(): Promise<GameConfig> {
 export async function saveGameConfig(cfg: GameConfig): Promise<void> {
   const { db } = getFirebase();
   if (!db) return;
-  await setDoc(doc(db, "config", "game"), cfg);
+  await set(ref(db, "config/game"), cfg);
 }
 
 // ------- Questions -------
 export async function loadQuestions(level?: LevelId): Promise<Question[]> {
   const { db } = getFirebase();
-  if (!db) return level ? DEFAULT_QUESTIONS.filter((q) => q.level === level) : DEFAULT_QUESTIONS;
+  if (!db) {
+    return level ? DEFAULT_QUESTIONS.filter((q) => q.level === level) : DEFAULT_QUESTIONS;
+  }
   try {
-    const col = collection(db, "questions");
-    const snap = await getDocs(col);
-    let qs = snap.docs.map((d) => ({ ...(d.data() as Question), id: d.id }));
+    const snap = await get(ref(db, "questions"));
+    let qs: Question[] = [];
+    if (snap.exists()) {
+      const val = snap.val() as Record<string, Question>;
+      qs = Object.keys(val).map((k) => ({ ...val[k], id: k }));
+    }
     if (qs.length === 0) qs = DEFAULT_QUESTIONS;
     return level ? qs.filter((q) => q.level === level) : qs;
   } catch (err) {
@@ -66,23 +66,23 @@ export async function loadQuestions(level?: LevelId): Promise<Question[]> {
 export async function saveQuestion(q: Question): Promise<void> {
   const { db } = getFirebase();
   if (!db) return;
-  await setDoc(doc(db, "questions", q.id), q);
+  await set(ref(db, `questions/${q.id}`), q);
 }
 
 export async function deleteQuestion(id: string): Promise<void> {
   const { db } = getFirebase();
   if (!db) return;
-  await deleteDoc(doc(db, "questions", id));
+  await remove(ref(db, `questions/${id}`));
 }
 
 export async function seedQuestionsIfEmpty(): Promise<void> {
   const { db } = getFirebase();
   if (!db) return;
-  const snap = await getDocs(collection(db, "questions"));
-  if (snap.empty) {
-    for (const q of DEFAULT_QUESTIONS) {
-      await setDoc(doc(db, "questions", q.id), q);
-    }
+  const snap = await get(ref(db, "questions"));
+  if (!snap.exists()) {
+    const payload: Record<string, Question> = {};
+    for (const q of DEFAULT_QUESTIONS) payload[q.id] = q;
+    await set(ref(db, "questions"), payload);
   }
 }
 
@@ -107,34 +107,53 @@ export function newPlayerState(uid: string, email: string): PlayerState {
 export async function loadPlayer(uid: string): Promise<PlayerState | null> {
   const { db } = getFirebase();
   if (!db) return null;
-  const snap = await getDoc(doc(db, "players", uid));
+  const snap = await get(ref(db, `players/${uid}`));
   if (!snap.exists()) return null;
-  return snap.data() as PlayerState;
+  const val = snap.val() as PlayerState;
+  // RTDB does not preserve empty arrays; normalize.
+  if (!val.levelResults) val.levelResults = [];
+  return val;
 }
 
 export async function savePlayer(p: PlayerState): Promise<void> {
   const { db } = getFirebase();
   if (!db) return;
   p.updatedAt = Date.now();
-  await setDoc(doc(db, "players", p.uid), p);
+  const sanitized: PlayerState = {
+    ...p,
+    // Firebase RTDB rejects `undefined` values.
+    character: p.character ?? ("" as unknown as PlayerState["character"]),
+    displayName: p.displayName ?? "",
+  };
+  // Remove undefineds entirely
+  const clean = JSON.parse(JSON.stringify(sanitized));
+  await set(ref(db, `players/${p.uid}`), clean);
 }
 
-export async function updatePlayer(uid: string, patch: Partial<PlayerState>): Promise<void> {
+export async function updatePlayer(
+  uid: string,
+  patch: Partial<PlayerState>,
+): Promise<void> {
   const { db } = getFirebase();
   if (!db) return;
-  await updateDoc(doc(db, "players", uid), { ...patch, updatedAt: Date.now() });
+  const clean = JSON.parse(JSON.stringify({ ...patch, updatedAt: Date.now() }));
+  await update(ref(db, `players/${uid}`), clean);
 }
 
 export async function listPlayers(): Promise<PlayerState[]> {
   const { db } = getFirebase();
   if (!db) return [];
-  const snap = await getDocs(collection(db, "players"));
-  return snap.docs.map((d) => d.data() as PlayerState);
+  const snap = await get(ref(db, "players"));
+  if (!snap.exists()) return [];
+  const val = snap.val() as Record<string, PlayerState>;
+  return Object.keys(val).map((k) => {
+    const v = val[k];
+    if (!v.levelResults) v.levelResults = [];
+    return v;
+  });
 }
 
 export async function resetPlayer(uid: string): Promise<void> {
-  const { db } = getFirebase();
-  if (!db) return;
   const existing = await loadPlayer(uid);
   if (!existing) return;
   const reset: PlayerState = {
@@ -148,20 +167,24 @@ export async function resetPlayer(uid: string): Promise<void> {
     character: undefined,
     updatedAt: Date.now(),
   };
-  await setDoc(doc(db, "players", uid), reset);
+  await savePlayer(reset);
 }
 
-export async function appendLevelResult(uid: string, result: LevelResult): Promise<void> {
+export async function appendLevelResult(
+  uid: string,
+  result: LevelResult,
+): Promise<void> {
   const p = await loadPlayer(uid);
   if (!p) return;
-  const existing = p.levelResults.filter((r) => r.level !== result.level);
+  const existing = (p.levelResults || []).filter((r) => r.level !== result.level);
+  const merged = [...existing, result].sort((a, b) => a.level - b.level);
   const updated: PlayerState = {
     ...p,
-    levelResults: [...existing, result].sort((a, b) => a.level - b.level),
-    totalScore: [...existing, result].reduce((s, r) => s + r.score, 0),
+    levelResults: merged,
+    totalScore: merged.reduce((s, r) => s + r.score, 0),
     checkpointLevel: result.level,
     checkpointQuestionIndex: 0,
-    currentLevel: (Math.min(5, result.level + 1) as LevelId),
+    currentLevel: Math.min(5, result.level + 1) as LevelId,
     updatedAt: Date.now(),
   };
   await savePlayer(updated);

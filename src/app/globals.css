@@ -130,3 +130,22 @@ textarea {
 
 /* Force pixel font via Google Fonts (fallback to monospace) */
 @import url("https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap");
+
+table th,
+table td {
+  border: 2px solid #111;
+  padding: 6px 8px;
+  text-align: left;
+  vertical-align: top;
+}
+
+table th {
+  background: #0b1b3a;
+  color: #ffd447;
+  font-size: 9px;
+}
+
+table td {
+  font-size: 10px;
+  background: #fff;
+}
