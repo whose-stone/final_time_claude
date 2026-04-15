@@ -340,10 +340,33 @@ export class Game {
         ) &&
         this.player.invincibleTicks <= 0
       ) {
-        this.onEvent({ type: "player_hit" });
-        this.kill();
+        // Mario-style stomp: if the player is falling and their feet are
+        // landing on the top of the gargoyle, the gargoyle is knocked off
+        // instead of the player getting hit. Doesn't apply to the boss —
+        // he's a person, not stone, and has his own HP/hit flow.
+        const playerFeet = this.player.pos.y + this.player.h;
+        const isFalling = this.player.vel.y > 1;
+        const feetOnHead = playerFeet <= g.pos.y + 18; // top ~18px of gargoyle
+        if (!g.isBoss && isFalling && feetOnHead) {
+          this.stompGargoyle(g);
+        } else {
+          this.onEvent({ type: "player_hit" });
+          this.kill();
+        }
       }
     }
+  }
+
+  private stompGargoyle(g: Gargoyle) {
+    // Same "defeated" effect as a prayer hit (AMEN + stone particles +
+    // score) plus a small bounce for the player.
+    this.hitGargoyle(g);
+    // Bounce: cap the downward velocity and apply an upward impulse.
+    this.player.vel.y = JUMP_V * 0.75;
+    this.player.onGround = false;
+    // Short invincibility so the player doesn't get instantly clipped by
+    // any debris overlap on the frame after the stomp.
+    this.player.invincibleTicks = Math.max(this.player.invincibleTicks, 10);
   }
 
   private updateBoss(g: Gargoyle) {
