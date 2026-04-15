@@ -29,10 +29,13 @@ export interface Question {
   // the pen+paper graded level questions ("test"). Older records written
   // before this field existed are treated as "bible".
   category?: QuestionCategory;
-  type: "multiple_choice" | "text";
+  // All questions are multiple-choice. The field is kept as a tagged
+  // constant so RTDB validation and future question formats can extend
+  // cleanly without a breaking schema change.
+  type: "multiple_choice";
   prompt: string;
-  choices?: string[]; // for multiple_choice, 4 items
-  answer: string; // correct answer (for MC this is one of choices; for text this is the accepted answer)
+  choices?: string[]; // exactly 4 choices in practice
+  answer: string; // correct answer — must match one of the choices
   points: number;
 }
 

@@ -1,10 +1,10 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useRouter } from "next/navigation";
+import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import { useAuth } from "@/components/AuthProvider";
 import { appendLevelResult, loadGameConfig, loadQuestions, updatePlayer } from "@/lib/db";
-import { DEFAULT_CONFIG, GameConfig, LevelId, Question } from "@/lib/types";
+import { Character, DEFAULT_CONFIG, GameConfig, LevelId, Question } from "@/lib/types";
 import { Game } from "@/lib/game/engine";
 import { GameEvent, LevelStats } from "@/lib/game/types";
 import GameCanvas from "@/components/GameCanvas";
@@ -12,9 +12,43 @@ import HUD from "@/components/HUD";
 import TriviaModal from "@/components/TriviaModal";
 import LevelResults from "@/components/LevelResults";
 
+// Next.js 14 requires useSearchParams to be inside a Suspense boundary
+// during static prerender, otherwise the page fails `next build`. The
+// actual gameplay UI lives in <GamePageInner/>; the default export just
+// wraps it so Next can bail out to client rendering for the query
+// string without breaking the build.
 export default function GamePage() {
-  const { user, player, loading, refreshPlayer, logout } = useAuth();
+  return (
+    <Suspense
+      fallback={
+        <main className="center-screen">
+          <div className="card">Loading your adventure...</div>
+        </main>
+      }
+    >
+      <GamePageInner />
+    </Suspense>
+  );
+}
+
+function GamePageInner() {
+  const { user, player, loading, isAdmin, refreshPlayer, logout } = useAuth();
   const router = useRouter();
+  const searchParams = useSearchParams();
+
+  // Admin playtest: /game?level=3&char=boy&admin=1 jumps straight into a
+  // level for testing without touching the player's saved progress. Only
+  // honored when the current user is actually an admin.
+  const isPlaytest =
+    isAdmin && (searchParams?.get("admin") === "1");
+  const playtestLevel = (() => {
+    const raw = parseInt(searchParams?.get("level") || "", 10);
+    return Number.isFinite(raw) && raw >= 1 && raw <= 5 ? (raw as LevelId) : null;
+  })();
+  const playtestChar: Character | null = (() => {
+    const raw = searchParams?.get("char");
+    return raw === "boy" || raw === "girl" ? raw : null;
+  })();
 
   const [config, setConfig] = useState<GameConfig>(DEFAULT_CONFIG);
   const [allQuestions, setAllQuestions] = useState<Question[]>([]);
@@ -36,12 +70,19 @@ export default function GamePage() {
   const eventHandlerRef = useRef<(e: GameEvent) => void>(() => {});
   const builtRef = useRef<{ level: LevelId | 0; key: number }>({ level: 0, key: -1 });
 
-  // Redirect when not authed or no character
+  // Redirect when not authed or no character. Admins playtesting via
+  // ?admin=1 skip the character-selection redirect because the playtest
+  // URL carries the character choice in its query.
   useEffect(() => {
     if (loading) return;
-    if (!user) router.replace("/");
-    else if (player && !player.character) router.replace("/character");
-  }, [user, player, loading, router]);
+    if (!user) {
+      router.replace("/");
+      return;
+    }
+    if (player && !player.character && !(isPlaytest && playtestChar)) {
+      router.replace("/character");
+    }
+  }, [user, player, loading, router, isPlaytest, playtestChar]);
 
   // Load config + questions
   useEffect(() => {
@@ -54,11 +95,17 @@ export default function GamePage() {
     })();
   }, [user]);
 
-  // Initialize starting level from player's checkpoint
+  // Initialize starting level. In admin playtest mode the query param wins
+  // so the admin lands exactly on the level they picked.
   useEffect(() => {
-    if (!player || !ready) return;
+    if (!ready) return;
+    if (isPlaytest && playtestLevel) {
+      setCurrentLevel(playtestLevel);
+      return;
+    }
+    if (!player) return;
     setCurrentLevel(player.checkpointLevel || player.currentLevel || 1);
-  }, [player, ready]);
+  }, [player, ready, isPlaytest, playtestLevel]);
 
   const levelCfg = config.levels[currentLevel];
   // Pen+paper pickups draw from "test" (graded) questions; falls back to
@@ -145,19 +192,36 @@ export default function GamePage() {
   // are triggered purely by `player` identity changing (e.g. after we refresh
   // player state post-level), which would otherwise reset mid-run progress.
   useEffect(() => {
-    if (!player || !ready || !player.character) return;
+    if (!ready) return;
+    // In admin playtest mode we don't need a saved player/character — the
+    // query param supplies the character, and checkpoints are bypassed.
+    const effectiveChar: Character | undefined = isPlaytest
+      ? (playtestChar ?? player?.character ?? "boy")
+      : player?.character;
+    if (!isPlaytest && (!player || !effectiveChar)) return;
+    if (isPlaytest && !effectiveChar) return;
     if (builtRef.current.level === currentLevel && builtRef.current.key === gameKey) return;
     builtRef.current = { level: currentLevel, key: gameKey };
-    const cp = player.checkpointLevel === currentLevel ? player.checkpointQuestionIndex : 0;
+    const cp =
+      isPlaytest
+        ? 0
+        : player && player.checkpointLevel === currentLevel
+          ? player.checkpointQuestionIndex
+          : 0;
+    const lives = isPlaytest
+      ? 99
+      : config.limitedLives
+        ? Math.max(1, (player?.lives ?? config.startingLives))
+        : 99;
     const g = new Game(
       {
         level: currentLevel,
-        character: player.character,
-        lives: config.limitedLives ? Math.max(1, player.lives || config.startingLives) : 99,
+        character: effectiveChar!,
+        lives,
         gargoyleCount: levelCfg.gargoyleCount,
         bibleCount: levelCfg.triviaBibleCount,
         questionCount: levelCfg.questionCount,
-        limitedLives: config.limitedLives,
+        limitedLives: isPlaytest ? false : config.limitedLives,
         onEvent: (e: GameEvent) => eventHandlerRef.current(e),
       },
       cp,
@@ -168,7 +232,7 @@ export default function GamePage() {
     setGameOver(false);
     setTriviaQuestion(null);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [gameKey, currentLevel, player, ready]);
+  }, [gameKey, currentLevel, player, ready, isPlaytest, playtestChar]);
 
   // Tick HUD regularly
   useEffect(() => {
@@ -178,7 +242,8 @@ export default function GamePage() {
 
   async function handleLevelEnd(stats: LevelStats, boss: boolean) {
     setResults({ ...stats, boss });
-    if (!player) return;
+    // Admin playtests never touch stored progress.
+    if (isPlaytest || !player) return;
     await appendLevelResult(player.uid, {
       level: stats.level,
       score: stats.score,
@@ -200,7 +265,8 @@ export default function GamePage() {
     } else {
       // Level question: score points, advance checkpoint
       g.recordAnswer(correct, triviaQuestion.points || levelCfg.pointsPerQuestion);
-      if (player) {
+      // Playtests don't advance the real student checkpoint.
+      if (!isPlaytest && player) {
         await updatePlayer(player.uid, {
           checkpointLevel: currentLevel,
           checkpointQuestionIndex: triviaIndex + 1,
@@ -212,6 +278,11 @@ export default function GamePage() {
   }
 
   function onContinue() {
+    if (isPlaytest) {
+      // After a playtest run, send the admin back to the admin panel.
+      router.replace("/admin");
+      return;
+    }
     if (currentLevel < 5) {
       setCurrentLevel((l) => (Math.min(5, l + 1) as LevelId));
       setGameKey((k) => k + 1);
@@ -225,10 +296,17 @@ export default function GamePage() {
   }
 
   function onExit() {
+    if (isPlaytest) {
+      router.replace("/admin");
+      return;
+    }
     logout().finally(() => router.replace("/"));
   }
 
-  if (loading || !player || !ready || !gameRef.current) {
+  // In playtest mode we don't require a saved player profile — an admin
+  // who has never picked a character can still launch the game via the
+  // admin Playtest panel.
+  if (loading || !ready || !gameRef.current || (!isPlaytest && !player)) {
     return (
       <main className="center-screen">
         <div className="card">Loading your adventure...</div>
@@ -244,6 +322,37 @@ export default function GamePage() {
 
   return (
     <main style={{ padding: 16, minHeight: "100vh" }}>
+      {isPlaytest && (
+        <div
+          style={{
+            maxWidth: 960,
+            margin: "0 auto 8px",
+            background: "#ffd447",
+            color: "#0b1b3a",
+            border: "3px solid #0b1b3a",
+            borderRadius: 6,
+            padding: "8px 14px",
+            display: "flex",
+            justifyContent: "space-between",
+            alignItems: "center",
+            gap: 10,
+            fontSize: 12,
+            letterSpacing: 1,
+            fontWeight: "bold",
+          }}
+        >
+          <span>
+            ★ ADMIN PLAYTEST · LEVEL {currentLevel} · progress is NOT saved
+          </span>
+          <button
+            className="btn-navy"
+            style={{ fontSize: 10, padding: "6px 10px" }}
+            onClick={() => router.replace("/admin")}
+          >
+            ← Back to Admin
+          </button>
+        </div>
+      )}
       <HUD
         levelId={currentLevel}
         prayers={g.player.prayers}

@@ -28,7 +28,7 @@ import {
 } from "@/lib/types";
 import { downloadPlayerPdf } from "@/lib/pdf";
 
-type Tab = "players" | "questions" | "config";
+type Tab = "players" | "questions" | "config" | "playtest";
 
 export default function AdminPage() {
   const { user, isAdmin, loading, logout } = useAuth();
@@ -114,6 +114,12 @@ export default function AdminPage() {
         >
           Game Config
         </button>
+        <button
+          className={tab === "playtest" ? "btn-red" : ""}
+          onClick={() => setTab("playtest")}
+        >
+          Playtest
+        </button>
       </div>
 
       {loadingData && <p>Loading data...</p>}
@@ -134,7 +140,73 @@ export default function AdminPage() {
           await refreshAll();
         }} />
       )}
+      {tab === "playtest" && <PlaytestPanel />}
     </main>
+  );
+}
+
+// ---------------- Playtest ----------------
+function PlaytestPanel() {
+  const router = useRouter();
+  const [level, setLevel] = useState<LevelId>(1);
+  const [character, setCharacter] = useState<"boy" | "girl">("boy");
+
+  function launch() {
+    const params = new URLSearchParams({
+      level: String(level),
+      char: character,
+      admin: "1",
+    });
+    router.push(`/game?${params.toString()}`);
+  }
+
+  return (
+    <div
+      style={{
+        background: "#fff",
+        border: "3px solid #111",
+        borderRadius: 8,
+        padding: 20,
+        maxWidth: 640,
+      }}
+    >
+      <h3 style={{ marginTop: 0 }}>Admin Playtest</h3>
+      <p style={{ fontSize: 11, lineHeight: 1.5, color: "#333" }}>
+        Jump directly into any level to test gameplay, boss fight, and
+        question ordering. Admin playtest sessions bypass checkpoint
+        saves so you can replay freely without overwriting student
+        progress.
+      </p>
+      <div style={{ display: "grid", gap: 10, fontSize: 10, marginTop: 12 }}>
+        <Row label="Level">
+          <select
+            value={level}
+            onChange={(e) => setLevel(parseInt(e.target.value, 10) as LevelId)}
+          >
+            {([1, 2, 3, 4, 5] as LevelId[]).map((l) => (
+              <option key={l} value={l}>
+                {l}. {LEVEL_NAMES[l]}
+                {l === 5 ? " (Boss)" : ""}
+              </option>
+            ))}
+          </select>
+        </Row>
+        <Row label="Character">
+          <select
+            value={character}
+            onChange={(e) => setCharacter(e.target.value as "boy" | "girl")}
+          >
+            <option value="boy">Boy Firebird</option>
+            <option value="girl">Girl Firebird</option>
+          </select>
+        </Row>
+      </div>
+      <div className="btn-row" style={{ marginTop: 16 }}>
+        <button className="btn-red" onClick={launch}>
+          ▶ Launch Playtest
+        </button>
+      </div>
+    </div>
   );
 }
 
@@ -359,7 +431,6 @@ function QuestionsPanel({
             <tr>
               <th>Level</th>
               <th>Category</th>
-              <th>Type</th>
               <th>Prompt</th>
               <th>Answer</th>
               <th>Points</th>
@@ -371,7 +442,6 @@ function QuestionsPanel({
               <tr key={q.id}>
                 <td>{q.level}. {LEVEL_NAMES[q.level]}</td>
                 <td>{q.category === "bible" ? "📖 Bible" : "📝 Test"}</td>
-                <td>{q.type === "multiple_choice" ? "MC" : "Text"}</td>
                 <td style={{ maxWidth: 400 }}>{q.prompt}</td>
                 <td>{q.answer}</td>
                 <td>{q.points}</td>
@@ -440,21 +510,6 @@ function QuestionEditor({
               <option value="test">📝 Test question (pen &amp; paper pickup)</option>
             </select>
           </Row>
-          <Row label="Type">
-            <select
-              value={question.type}
-              onChange={(e) =>
-                onChange({
-                  ...question,
-                  type: e.target.value as Question["type"],
-                  choices: e.target.value === "multiple_choice" ? (question.choices ?? ["", "", "", ""]) : undefined,
-                })
-              }
-            >
-              <option value="multiple_choice">Multiple Choice</option>
-              <option value="text">Text Response</option>
-            </select>
-          </Row>
           <Row label="Prompt">
             <textarea
               rows={3}
@@ -462,43 +517,31 @@ function QuestionEditor({
               onChange={(e) => onChange({ ...question, prompt: e.target.value })}
             />
           </Row>
-          {question.type === "multiple_choice" && (
-            <>
-              {(question.choices ?? ["", "", "", ""]).map((c, i) => (
-                <Row key={i} label={`Choice ${i + 1}`}>
-                  <input
-                    value={c}
-                    onChange={(e) => {
-                      const arr = [...(question.choices ?? ["", "", "", ""])];
-                      arr[i] = e.target.value;
-                      onChange({ ...question, choices: arr });
-                    }}
-                  />
-                </Row>
-              ))}
-              <Row label="Correct Answer">
-                <select
-                  value={question.answer}
-                  onChange={(e) => onChange({ ...question, answer: e.target.value })}
-                >
-                  <option value="">-- pick one --</option>
-                  {(question.choices ?? []).filter(Boolean).map((c) => (
-                    <option key={c} value={c}>
-                      {c}
-                    </option>
-                  ))}
-                </select>
-              </Row>
-            </>
-          )}
-          {question.type === "text" && (
-            <Row label="Accepted Answer">
+          {(question.choices ?? ["", "", "", ""]).map((c, i) => (
+            <Row key={i} label={`Choice ${i + 1}`}>
               <input
-                value={question.answer}
-                onChange={(e) => onChange({ ...question, answer: e.target.value })}
+                value={c}
+                onChange={(e) => {
+                  const arr = [...(question.choices ?? ["", "", "", ""])];
+                  arr[i] = e.target.value;
+                  onChange({ ...question, choices: arr });
+                }}
               />
             </Row>
-          )}
+          ))}
+          <Row label="Correct Answer">
+            <select
+              value={question.answer}
+              onChange={(e) => onChange({ ...question, answer: e.target.value })}
+            >
+              <option value="">-- pick one --</option>
+              {(question.choices ?? []).filter(Boolean).map((c) => (
+                <option key={c} value={c}>
+                  {c}
+                </option>
+              ))}
+            </select>
+          </Row>
           <Row label="Points">
             <input
               type="number"

@@ -10,7 +10,6 @@ interface Props {
 }
 
 export default function TriviaModal({ question, headerLabel, onResolve }: Props) {
-  const [text, setText] = useState("");
   const [picked, setPicked] = useState<string | null>(null);
   const [resolvedCorrect, setResolvedCorrect] = useState<boolean | null>(null);
 
@@ -23,6 +22,8 @@ export default function TriviaModal({ question, headerLabel, onResolve }: Props)
     setResolvedCorrect(ok);
     setTimeout(() => onResolve(ok, answer), 950);
   }
+
+  const choices = question.choices ?? [];
 
   return (
     <div style={overlay}>
@@ -43,68 +44,41 @@ export default function TriviaModal({ question, headerLabel, onResolve }: Props)
           {question.prompt}
         </h2>
 
-        {question.type === "multiple_choice" && question.choices ? (
-          <div style={{ display: "grid", gap: 12 }}>
-            {question.choices.map((c) => {
-              const isPicked = picked === c;
-              const showCorrect = resolvedCorrect !== null && c === question.answer;
-              const showWrong =
-                resolvedCorrect === false && isPicked && c !== question.answer;
-              return (
-                <button
-                  key={c}
-                  onClick={() => {
-                    if (resolvedCorrect !== null) return;
-                    setPicked(c);
-                    submit(c);
-                  }}
-                  disabled={resolvedCorrect !== null}
-                  style={{
-                    textAlign: "left",
-                    fontSize: 16,
-                    lineHeight: 1.4,
-                    padding: "14px 16px",
-                    background: showCorrect
-                      ? "#3ea35a"
-                      : showWrong
-                        ? "#c83232"
-                        : isPicked
-                          ? "#ffd447"
-                          : "#faf3e0",
-                    color: showCorrect || showWrong ? "white" : "#111",
-                  }}
-                >
-                  {c}
-                </button>
-              );
-            })}
-          </div>
-        ) : (
-          <form
-            onSubmit={(e) => {
-              e.preventDefault();
-              if (resolvedCorrect !== null) return;
-              submit(text);
-            }}
-          >
-            <input
-              autoFocus
-              type="text"
-              value={text}
-              onChange={(e) => setText(e.target.value)}
-              style={{ width: "100%", padding: 16, fontSize: 18 }}
-              disabled={resolvedCorrect !== null}
-            />
-            <button
-              type="submit"
-              className="btn-red"
-              style={{ marginTop: 14, fontSize: 15, padding: "14px 20px" }}
-              disabled={resolvedCorrect !== null}
-            >
-              SUBMIT
-            </button>
-          </form>
-        )}
+        <div style={{ display: "grid", gap: 12 }}>
+          {choices.map((c) => {
+            const isPicked = picked === c;
+            const showCorrect = resolvedCorrect !== null && c === question.answer;
+            const showWrong =
+              resolvedCorrect === false && isPicked && c !== question.answer;
+            return (
+              <button
+                key={c}
+                onClick={() => {
+                  if (resolvedCorrect !== null) return;
+                  setPicked(c);
+                  submit(c);
+                }}
+                disabled={resolvedCorrect !== null}
+                style={{
+                  textAlign: "left",
+                  fontSize: 16,
+                  lineHeight: 1.4,
+                  padding: "14px 16px",
+                  background: showCorrect
+                    ? "#3ea35a"
+                    : showWrong
+                      ? "#c83232"
+                      : isPicked
+                        ? "#ffd447"
+                        : "#faf3e0",
+                  color: showCorrect || showWrong ? "white" : "#111",
+                }}
+              >
+                {c}
+              </button>
+            );
+          })}
+        </div>
 
         {resolvedCorrect !== null && (
           <div
