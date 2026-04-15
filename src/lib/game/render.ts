@@ -732,8 +732,36 @@ function drawFirebird(
   ctx.fillStyle = "#ffd447";
   ctx.fillRect(16, -7, 8, 3);
   if (character === "girl") {
+    // Pink hair bow — two loops with a center knot and ribbon tails,
+    // sitting on top of the head centered over the flame mane.
+    // Ribbon tails (draw first so they sit behind the bow loops)
     ctx.fillStyle = "#ff4d88";
-    ctx.fillRect(28, -4, 8, 6);
+    ctx.fillRect(14, 2, 2, 5);
+    ctx.fillRect(22, 2, 2, 5);
+    ctx.fillStyle = "#cc2e68";
+    ctx.fillRect(14, 6, 2, 2);
+    ctx.fillRect(22, 6, 2, 2);
+    // Left loop
+    ctx.fillStyle = "#ff4d88";
+    ctx.fillRect(8, -6, 10, 8);
+    ctx.fillStyle = "#cc2e68";
+    ctx.fillRect(8, 0, 10, 2);
+    ctx.fillStyle = "#ffb3cc";
+    ctx.fillRect(9, -5, 3, 2);
+    // Right loop
+    ctx.fillStyle = "#ff4d88";
+    ctx.fillRect(22, -6, 10, 8);
+    ctx.fillStyle = "#cc2e68";
+    ctx.fillRect(22, 0, 10, 2);
+    ctx.fillStyle = "#ffb3cc";
+    ctx.fillRect(28, -5, 3, 2);
+    // Knot (center)
+    ctx.fillStyle = "#cc2e68";
+    ctx.fillRect(18, -6, 4, 8);
+    ctx.fillStyle = "#ff7aa2";
+    ctx.fillRect(18, -4, 4, 2);
+    ctx.fillStyle = "#ffd6e5";
+    ctx.fillRect(19, -5, 2, 1);
   }
   // Head
   ctx.fillStyle = "#ba0c2f";
