@@ -1,0 +1,132 @@
+:root {
+  --acu-red: #ba0c2f;
+  --acu-gold: #ffd447;
+  --acu-navy: #0b1b3a;
+  --acu-cream: #faf3e0;
+  --ink: #111;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+  min-height: 100%;
+  background: var(--acu-cream);
+  color: var(--ink);
+  font-family: "Press Start 2P", ui-monospace, "Courier New", monospace;
+  -webkit-font-smoothing: antialiased;
+}
+
+a {
+  color: var(--acu-red);
+}
+
+button {
+  font-family: inherit;
+  cursor: pointer;
+  border: 3px solid var(--ink);
+  background: var(--acu-gold);
+  color: var(--ink);
+  padding: 10px 16px;
+  border-radius: 6px;
+  font-weight: bold;
+  box-shadow: 3px 3px 0 var(--ink);
+  transition: transform 0.05s ease-in-out;
+}
+
+button:hover:not(:disabled) {
+  transform: translate(-1px, -1px);
+  box-shadow: 4px 4px 0 var(--ink);
+}
+
+button:active:not(:disabled) {
+  transform: translate(2px, 2px);
+  box-shadow: 1px 1px 0 var(--ink);
+}
+
+button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+input,
+select,
+textarea {
+  font-family: inherit;
+  padding: 8px 10px;
+  border: 2px solid var(--ink);
+  border-radius: 4px;
+  background: white;
+}
+
+.center-screen {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+}
+
+.card {
+  background: white;
+  border: 4px solid var(--ink);
+  border-radius: 10px;
+  box-shadow: 8px 8px 0 var(--acu-red);
+  padding: 28px;
+  max-width: 560px;
+  width: 100%;
+}
+
+.title {
+  font-size: 28px;
+  color: var(--acu-red);
+  margin: 0 0 6px 0;
+  letter-spacing: 1px;
+}
+
+.subtitle {
+  font-size: 10px;
+  color: var(--acu-navy);
+  margin: 0 0 20px 0;
+}
+
+.form-row {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 14px;
+  font-size: 10px;
+}
+
+.error {
+  color: var(--acu-red);
+  font-size: 10px;
+  margin: 8px 0;
+}
+
+.btn-row {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.btn-red {
+  background: var(--acu-red);
+  color: white;
+}
+
+.btn-navy {
+  background: var(--acu-navy);
+  color: white;
+}
+
+.pixel-font {
+  font-family: "Press Start 2P", ui-monospace, "Courier New", monospace;
+}
+
+/* Force pixel font via Google Fonts (fallback to monospace) */
+@import url("https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap");
