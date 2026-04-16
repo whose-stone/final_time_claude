@@ -146,20 +146,35 @@ export class Game {
   }
 
   private spawnBibles(n: number) {
-    const minX = 300;
-    const maxX = this.level.width - 300;
+    // Bible blocks are Ten Commandments stone tablets floating at
+    // head-bump height — the player must jump and knock them from below
+    // with their head to activate them (Mario "?"-block style). Placed
+    // high enough that a walking player cannot trigger them by accident.
+    const BLOCK_W = 48;
+    const BLOCK_H = 40;
+    const minX = 360;
+    const maxX = this.level.width - 360;
     const step = (maxX - minX) / Math.max(1, n);
+    // Player top while standing is at groundY - player.h (= groundY - 52).
+    // Peak head height during a jump is approximately groundY - 187. We
+    // choose block tops between groundY - 220 and groundY - 160 so the
+    // block bottom sits in the range groundY - 180 .. groundY - 120 —
+    // always above a standing player's head, always reachable by jumping.
+    const baseTop = this.level.groundY - 220;
     for (let i = 0; i < n; i++) {
       const x = minX + step * i + 40;
-      const y = this.level.groundY - 120 - Math.random() * 80;
+      const yOffset = (i % 3) * 20; // stagger at three heights for variety
+      const y = baseTop + yOffset;
       this.pickups.push({
         id: uid(),
         pos: { x, y },
-        w: PICKUP_W,
-        h: PICKUP_H,
+        w: BLOCK_W,
+        h: BLOCK_H,
         alive: true,
         kind: "bible",
-        bob: Math.random() * Math.PI * 2,
+        bob: 0,
+        used: false,
+        hitTicks: 0,
       });
     }
   }
@@ -254,6 +269,32 @@ export class Game {
           p.pos.y = plat.y + plat.h;
           p.vel.y = 0;
         }
+      }
+    }
+    // Ten Commandments bible blocks — solid from above, head-bumpable
+    // from below. Hitting the underside while rising activates the
+    // block and opens a Bible trivia question.
+    for (const pk of this.pickups) {
+      if (pk.kind !== "bible") continue;
+      if (!rectsOverlap(p.pos.x, p.pos.y, p.w, p.h, pk.pos.x, pk.pos.y, pk.w, pk.h)) {
+        continue;
+      }
+      if (p.vel.y < 0) {
+        // Head-bump from below: clamp the player under the block and
+        // reverse a bit of upward velocity so they fall away cleanly.
+        p.pos.y = pk.pos.y + pk.h;
+        p.vel.y = 1;
+        if (!pk.used) {
+          pk.used = true;
+          pk.hitTicks = 12; // brief shake/bounce animation for the block
+          this.paused = true;
+          this.onEvent({ type: "bible_collected" });
+        }
+      } else if (p.vel.y > 0) {
+        // Land on top — the block is still solid terrain even after use.
+        p.pos.y = pk.pos.y - p.h;
+        p.vel.y = 0;
+        p.onGround = true;
       }
     }
     if (p.pos.y > CANVAS_H + 80) this.kill();
@@ -591,6 +632,14 @@ export class Game {
   // ---- Pickups ----
   private updatePickups() {
     for (const pk of this.pickups) {
+      // Tick the Ten Commandments block "hit" animation regardless of the
+      // paused flag so the shake completes even while the trivia modal is
+      // open. Bible blocks themselves are handled entirely in
+      // updatePlayer (solid collision + head-bump activation).
+      if (pk.kind === "bible") {
+        if ((pk.hitTicks ?? 0) > 0) pk.hitTicks = (pk.hitTicks ?? 0) - 1;
+        continue;
+      }
       if (!pk.alive) continue;
       pk.bob += 0.08;
       const bobY = Math.sin(pk.bob) * 4;
@@ -608,8 +657,7 @@ export class Game {
       ) {
         pk.alive = false;
         this.paused = true;
-        if (pk.kind === "bible") this.onEvent({ type: "bible_collected" });
-        else this.onEvent({ type: "pen_collected", questionIndex: pk.questionIndex ?? 0 });
+        this.onEvent({ type: "pen_collected", questionIndex: pk.questionIndex ?? 0 });
       }
     }
   }

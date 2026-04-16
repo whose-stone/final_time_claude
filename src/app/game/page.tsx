@@ -380,8 +380,9 @@ function GamePageInner() {
           padding: "10px 14px",
         }}
       >
-        ← → / A D to move · Space or ↑ to jump · F or Shift to pray · Collect
-        📖 for prayers · Collect 📝 for questions
+        ← → / A D to move · Space or ↑ to jump · F or Shift to pray ·
+        Head-bump 📜 Ten Commandments blocks for prayers · Collect 📝 for
+        questions
       </div>
 
       {triviaQuestion && (

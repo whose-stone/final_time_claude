@@ -10,7 +10,12 @@ export function render(ctx: CanvasRenderingContext2D, game: Game) {
   drawPlatforms(ctx, level, camera.x);
   drawGoal(ctx, level, camera.x);
 
-  for (const pk of game.pickups) if (pk.alive) drawPickup(ctx, pk, camera.x);
+  // Bible (Ten Commandments) blocks stay drawn even after being hit so the
+  // player can still see the spent tablets as world scenery. Pen+paper
+  // pickups disappear once collected.
+  for (const pk of game.pickups) {
+    if (pk.kind === "bible" || pk.alive) drawPickup(ctx, pk, camera.x);
+  }
   for (const g of game.gargoyles) drawGargoyle(ctx, g, camera.x);
   for (const proj of game.projectiles) if (proj.alive) drawProjectile(ctx, proj, camera.x);
   drawPlayer(ctx, game, camera.x);
@@ -189,45 +194,163 @@ function drawGoal(ctx: CanvasRenderingContext2D, level: LevelData, camX: number)
 
 function drawPickup(ctx: CanvasRenderingContext2D, pk: Pickup, camX: number) {
   const x = pk.pos.x - camX;
+  if (pk.kind === "bible") {
+    drawCommandmentsBlock(ctx, pk, x);
+    return;
+  }
+  // Pen + paper (floating, walk-into pickup — keeps the bob animation)
   const bobY = Math.sin(pk.bob) * 4;
   const y = pk.pos.y + bobY;
-  if (pk.kind === "bible") {
-    // Glow
-    ctx.fillStyle = "rgba(255, 212, 71, 0.4)";
-    ctx.beginPath();
-    ctx.arc(x + pk.w / 2, y + pk.h / 2, 22, 0, Math.PI * 2);
-    ctx.fill();
-    // Book
-    ctx.fillStyle = "#5a2a2a";
-    ctx.fillRect(x, y, pk.w, pk.h);
-    ctx.fillStyle = "#ba0c2f";
-    ctx.fillRect(x + 2, y + 2, pk.w - 4, pk.h - 4);
-    ctx.fillStyle = "#ffd447";
-    ctx.fillRect(x + pk.w / 2 - 1, y + 4, 2, pk.h - 8);
-    ctx.fillRect(x + pk.w / 2 - 5, y + pk.h / 2 - 1, 10, 2);
-  } else {
-    // Pen + paper
-    ctx.fillStyle = "rgba(180, 210, 255, 0.4)";
-    ctx.beginPath();
-    ctx.arc(x + pk.w / 2, y + pk.h / 2, 22, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.fillStyle = "#fff";
-    ctx.fillRect(x, y, pk.w, pk.h);
-    ctx.strokeStyle = "#000";
-    ctx.strokeRect(x, y, pk.w, pk.h);
-    ctx.fillStyle = "#888";
-    ctx.fillRect(x + 4, y + 6, pk.w - 8, 2);
-    ctx.fillRect(x + 4, y + 12, pk.w - 8, 2);
-    ctx.fillRect(x + 4, y + 18, pk.w - 12, 2);
-    // Pen
-    ctx.fillStyle = "#ba0c2f";
-    ctx.save();
-    ctx.translate(x + pk.w - 6, y + 6);
-    ctx.rotate(-0.6);
-    ctx.fillRect(0, 0, 4, 20);
-    ctx.fillStyle = "#ffd447";
-    ctx.fillRect(0, 16, 4, 6);
-    ctx.restore();
+  ctx.fillStyle = "rgba(180, 210, 255, 0.4)";
+  ctx.beginPath();
+  ctx.arc(x + pk.w / 2, y + pk.h / 2, 22, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.fillStyle = "#fff";
+  ctx.fillRect(x, y, pk.w, pk.h);
+  ctx.strokeStyle = "#000";
+  ctx.strokeRect(x, y, pk.w, pk.h);
+  ctx.fillStyle = "#888";
+  ctx.fillRect(x + 4, y + 6, pk.w - 8, 2);
+  ctx.fillRect(x + 4, y + 12, pk.w - 8, 2);
+  ctx.fillRect(x + 4, y + 18, pk.w - 12, 2);
+  // Pen
+  ctx.fillStyle = "#ba0c2f";
+  ctx.save();
+  ctx.translate(x + pk.w - 6, y + 6);
+  ctx.rotate(-0.6);
+  ctx.fillRect(0, 0, 4, 20);
+  ctx.fillStyle = "#ffd447";
+  ctx.fillRect(0, 16, 4, 6);
+  ctx.restore();
+}
+
+// A Ten Commandments stone-tablet "?"-block. The player must head-bump
+// it from below to open the Bible trivia question. Once used the block
+// greys out and stops triggering trivia.
+function drawCommandmentsBlock(
+  ctx: CanvasRenderingContext2D,
+  pk: Pickup,
+  x: number,
+) {
+  // Short upward-then-settle shake when freshly hit.
+  const hit = pk.hitTicks ?? 0;
+  const shakeY = hit > 0 ? -Math.sin((hit / 12) * Math.PI) * 6 : 0;
+  const y = pk.pos.y + shakeY;
+  const w = pk.w;
+  const h = pk.h;
+  const used = !!pk.used;
+
+  // Stone brick frame
+  const stoneLight = used ? "#6e6963" : "#a39a8c";
+  const stoneMid = used ? "#4f4b46" : "#7c7366";
+  const stoneDark = used ? "#2d2a26" : "#4b4438";
+  ctx.fillStyle = stoneMid;
+  ctx.fillRect(x, y, w, h);
+  // Top highlight + bottom shadow
+  ctx.fillStyle = stoneLight;
+  ctx.fillRect(x, y, w, 3);
+  ctx.fillRect(x, y, 3, h);
+  ctx.fillStyle = stoneDark;
+  ctx.fillRect(x, y + h - 3, w, 3);
+  ctx.fillRect(x + w - 3, y, 3, h);
+  // Stone specks (static noise so the block feels chiselled)
+  ctx.fillStyle = stoneDark;
+  for (let i = 0; i < 6; i++) {
+    const sx = x + 4 + ((i * 13) % (w - 8));
+    const sy = y + 5 + ((i * 7) % (h - 10));
+    ctx.fillRect(sx, sy, 1, 1);
+  }
+
+  // Two rounded-top tablets centered in the block.
+  const tabletMargin = 4;
+  const gap = 2;
+  const tabletW = (w - tabletMargin * 2 - gap) / 2;
+  const tabletH = h - 8;
+  const tabletY = y + 4;
+  const leftX = x + tabletMargin;
+  const rightX = leftX + tabletW + gap;
+  drawTablet(ctx, leftX, tabletY, tabletW, tabletH, used, ["I", "II", "III", "IV", "V"]);
+  drawTablet(
+    ctx,
+    rightX,
+    tabletY,
+    tabletW,
+    tabletH,
+    used,
+    ["VI", "VII", "VIII", "IX", "X"],
+  );
+
+  // Golden glint on unused blocks so players know it's interactive.
+  if (!used) {
+    const t = (performance.now?.() ?? Date.now()) / 300;
+    const pulse = 0.55 + Math.sin(t) * 0.2;
+    ctx.fillStyle = `rgba(255, 212, 71, ${pulse.toFixed(3)})`;
+    ctx.fillRect(x + w / 2 - 1, y - 4, 2, 3);
+    ctx.fillRect(x + w / 2 - 3, y - 2, 6, 1);
+    // Faint halo glow
+    const grad = ctx.createRadialGradient(
+      x + w / 2,
+      y + h / 2,
+      4,
+      x + w / 2,
+      y + h / 2,
+      w,
+    );
+    grad.addColorStop(0, "rgba(255, 212, 71, 0.25)");
+    grad.addColorStop(1, "rgba(255, 212, 71, 0)");
+    ctx.fillStyle = grad;
+    ctx.fillRect(x - 16, y - 16, w + 32, h + 32);
+  }
+}
+
+function drawTablet(
+  ctx: CanvasRenderingContext2D,
+  x: number,
+  y: number,
+  w: number,
+  h: number,
+  used: boolean,
+  numerals: string[],
+) {
+  const faceLight = used ? "#b5ac95" : "#efe3b8";
+  const faceMid = used ? "#7f7863" : "#d9c98a";
+  const faceDark = used ? "#55503f" : "#9e8a4e";
+
+  // Rounded-top tablet silhouette: upper half is an arch.
+  ctx.fillStyle = faceMid;
+  ctx.beginPath();
+  ctx.moveTo(x, y + w / 2);
+  ctx.quadraticCurveTo(x + w / 2, y - 1, x + w, y + w / 2);
+  ctx.lineTo(x + w, y + h);
+  ctx.lineTo(x, y + h);
+  ctx.closePath();
+  ctx.fill();
+
+  // Inner face (slightly inset)
+  ctx.fillStyle = faceLight;
+  const inset = 2;
+  ctx.beginPath();
+  ctx.moveTo(x + inset, y + w / 2);
+  ctx.quadraticCurveTo(x + w / 2, y + 1, x + w - inset, y + w / 2);
+  ctx.lineTo(x + w - inset, y + h - inset);
+  ctx.lineTo(x + inset, y + h - inset);
+  ctx.closePath();
+  ctx.fill();
+
+  // Bottom shadow to give 3D feel
+  ctx.fillStyle = faceDark;
+  ctx.fillRect(x + inset, y + h - 3, w - inset * 2, 1);
+
+  // Commandment carvings — one tiny Roman-numeral line per commandment.
+  ctx.fillStyle = faceDark;
+  const startY = y + Math.max(10, w / 2 + 2);
+  const step = Math.max(3, (h - (startY - y) - 4) / numerals.length);
+  for (let i = 0; i < numerals.length; i++) {
+    const cy = startY + i * step;
+    // Short chiselled line; the numeral text is too small at this scale
+    // so we only hint it with horizontal strokes at varying widths.
+    const lineW = Math.min(w - 6, 6 + (numerals[i].length - 1) * 2);
+    ctx.fillRect(x + (w - lineW) / 2, cy, lineW, 1);
   }
 }
 
