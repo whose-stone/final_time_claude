@@ -286,12 +286,14 @@ export class Game {
         p.vel.y = 1;
         if (!pk.used) {
           pk.used = true;
-          pk.hitTicks = 12; // brief shake/bounce animation for the block
+          pk.alive = false; // block shatters — no gray remnant
+          pk.hitTicks = 0;
+          this.spawnBlockDebris(pk);
           this.paused = true;
           this.onEvent({ type: "bible_collected" });
         }
-      } else if (p.vel.y > 0) {
-        // Land on top — the block is still solid terrain even after use.
+      } else if (p.vel.y > 0 && pk.alive) {
+        // Land on top — only if the block hasn't shattered yet.
         p.pos.y = pk.pos.y - p.h;
         p.vel.y = 0;
         p.onGround = true;
@@ -625,6 +627,26 @@ export class Game {
         life: 40 + Math.random() * 20,
         color: ["#8a8a94", "#b5b5c2", "#5a5a66", "#ffd447"][Math.floor(Math.random() * 4)],
         size: 3 + Math.random() * 4,
+      });
+    }
+  }
+
+  /**
+   * Spawn a burst of stone/brick chunks from a shattered Ten Commandments
+   * block. The pieces fly outward and upward then arc down with gravity,
+   * mimicking a brick being smashed from below.
+   */
+  private spawnBlockDebris(pk: Pickup) {
+    const cx = pk.pos.x + pk.w / 2;
+    const cy = pk.pos.y + pk.h / 2;
+    const colors = ["#d9c98a", "#a39a8c", "#7c7366", "#efe3b8", "#4b4438"];
+    for (let i = 0; i < 18; i++) {
+      this.particles.push({
+        pos: { x: cx + (Math.random() - 0.5) * pk.w, y: cy + (Math.random() - 0.5) * pk.h },
+        vel: { x: (Math.random() - 0.5) * 8, y: -3 - Math.random() * 6 },
+        life: 50 + Math.random() * 30,
+        color: colors[Math.floor(Math.random() * colors.length)],
+        size: 4 + Math.random() * 5,
       });
     }
   }

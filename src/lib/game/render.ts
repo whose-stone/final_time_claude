@@ -10,11 +10,12 @@ export function render(ctx: CanvasRenderingContext2D, game: Game) {
   drawPlatforms(ctx, level, camera.x);
   drawGoal(ctx, level, camera.x);
 
-  // Bible (Ten Commandments) blocks stay drawn even after being hit so the
-  // player can still see the spent tablets as world scenery. Pen+paper
-  // pickups disappear once collected.
+  // Bible (Ten Commandments) blocks shatter into debris when head-bumped,
+  // so only draw them while alive. Pen+paper pickups also vanish when
+  // collected. The stone particles from the shatter are drawn with the
+  // regular particle pass below.
   for (const pk of game.pickups) {
-    if (pk.kind === "bible" || pk.alive) drawPickup(ctx, pk, camera.x);
+    if (pk.alive) drawPickup(ctx, pk, camera.x);
   }
   for (const g of game.gargoyles) drawGargoyle(ctx, g, camera.x);
   for (const proj of game.projectiles) if (proj.alive) drawProjectile(ctx, proj, camera.x);
@@ -238,12 +239,12 @@ function drawCommandmentsBlock(
   const y = pk.pos.y + shakeY;
   const w = pk.w;
   const h = pk.h;
-  const used = !!pk.used;
-
+  // The block is only drawn when alive — once shattered, debris
+  // particles handle the visual and the block is skipped entirely.
   // Stone brick frame
-  const stoneLight = used ? "#6e6963" : "#a39a8c";
-  const stoneMid = used ? "#4f4b46" : "#7c7366";
-  const stoneDark = used ? "#2d2a26" : "#4b4438";
+  const stoneLight = "#a39a8c";
+  const stoneMid = "#7c7366";
+  const stoneDark = "#4b4438";
   ctx.fillStyle = stoneMid;
   ctx.fillRect(x, y, w, h);
   // Top highlight + bottom shadow
@@ -269,38 +270,21 @@ function drawCommandmentsBlock(
   const tabletY = y + 4;
   const leftX = x + tabletMargin;
   const rightX = leftX + tabletW + gap;
-  drawTablet(ctx, leftX, tabletY, tabletW, tabletH, used, ["I", "II", "III", "IV", "V"]);
-  drawTablet(
-    ctx,
-    rightX,
-    tabletY,
-    tabletW,
-    tabletH,
-    used,
-    ["VI", "VII", "VIII", "IX", "X"],
-  );
+  drawTablet(ctx, leftX, tabletY, tabletW, tabletH, ["I", "II", "III", "IV", "V"]);
+  drawTablet(ctx, rightX, tabletY, tabletW, tabletH, ["VI", "VII", "VIII", "IX", "X"]);
 
-  // Golden glint on unused blocks so players know it's interactive.
-  if (!used) {
-    const t = (performance.now?.() ?? Date.now()) / 300;
-    const pulse = 0.55 + Math.sin(t) * 0.2;
-    ctx.fillStyle = `rgba(255, 212, 71, ${pulse.toFixed(3)})`;
-    ctx.fillRect(x + w / 2 - 1, y - 4, 2, 3);
-    ctx.fillRect(x + w / 2 - 3, y - 2, 6, 1);
-    // Faint halo glow
-    const grad = ctx.createRadialGradient(
-      x + w / 2,
-      y + h / 2,
-      4,
-      x + w / 2,
-      y + h / 2,
-      w,
-    );
-    grad.addColorStop(0, "rgba(255, 212, 71, 0.25)");
-    grad.addColorStop(1, "rgba(255, 212, 71, 0)");
-    ctx.fillStyle = grad;
-    ctx.fillRect(x - 16, y - 16, w + 32, h + 32);
-  }
+  // Golden glint so players know it's interactive.
+  const t = (performance.now?.() ?? Date.now()) / 300;
+  const pulse = 0.55 + Math.sin(t) * 0.2;
+  ctx.fillStyle = `rgba(255, 212, 71, ${pulse.toFixed(3)})`;
+  ctx.fillRect(x + w / 2 - 1, y - 4, 2, 3);
+  ctx.fillRect(x + w / 2 - 3, y - 2, 6, 1);
+  // Faint halo glow
+  const grad = ctx.createRadialGradient(x + w / 2, y + h / 2, 4, x + w / 2, y + h / 2, w);
+  grad.addColorStop(0, "rgba(255, 212, 71, 0.25)");
+  grad.addColorStop(1, "rgba(255, 212, 71, 0)");
+  ctx.fillStyle = grad;
+  ctx.fillRect(x - 16, y - 16, w + 32, h + 32);
 }
 
 function drawTablet(
@@ -309,12 +293,11 @@ function drawTablet(
   y: number,
   w: number,
   h: number,
-  used: boolean,
   numerals: string[],
 ) {
-  const faceLight = used ? "#b5ac95" : "#efe3b8";
-  const faceMid = used ? "#7f7863" : "#d9c98a";
-  const faceDark = used ? "#55503f" : "#9e8a4e";
+  const faceLight = "#efe3b8";
+  const faceMid = "#d9c98a";
+  const faceDark = "#9e8a4e";
 
   // Rounded-top tablet silhouette: upper half is an arch.
   ctx.fillStyle = faceMid;
