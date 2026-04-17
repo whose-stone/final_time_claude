@@ -29,6 +29,10 @@ const PRAYER_SPEED = 8.5;
 const TEMPTATION_SPEED = 3.2;
 const HOMEWORK_SPEED = 4.5;
 const INVINCIBLE_TICKS = 90;
+// Maximum distance (px) a prayer can travel from where it was fired.
+// After this it fades out and disappears. Forces the player to get
+// close-ish to gargoyles rather than sniping from across the level.
+const PRAYER_RANGE = 400;
 // Bonus points awarded when a gargoyle is defeated with a prayer shot.
 // Stomping does NOT award bonus points — only the prayer-ascension path.
 const PRAYER_BONUS_POINTS = 10;
@@ -304,14 +308,16 @@ export class Game {
     // Shoot prayer
     if (this.shootCooldown > 0) this.shootCooldown--;
     if (this.input.shoot && p.prayers > 0 && this.shootCooldown === 0) {
+      const sx = p.pos.x + (p.facing === 1 ? p.w : -14);
       this.projectiles.push({
         id: uid(),
-        pos: { x: p.pos.x + (p.facing === 1 ? p.w : -14), y: p.pos.y + 20 },
+        pos: { x: sx, y: p.pos.y + 20 },
         vel: { x: PRAYER_SPEED * p.facing, y: -1 },
         w: 22,
         h: 16,
         alive: true,
         kind: "prayer",
+        spawnX: sx,
       });
       p.prayers -= 1;
       this.shootCooldown = 18;
@@ -511,6 +517,13 @@ export class Game {
       if (proj.pos.x < -50 || proj.pos.x > this.level.width + 50 || proj.pos.y > CANVAS_H + 100) {
         proj.alive = false;
         continue;
+      }
+      // Prayers have limited range — they fade and die after PRAYER_RANGE px.
+      if (proj.kind === "prayer" && proj.spawnX !== undefined) {
+        if (Math.abs(proj.pos.x - proj.spawnX) > PRAYER_RANGE) {
+          proj.alive = false;
+          continue;
+        }
       }
 
       // Collisions

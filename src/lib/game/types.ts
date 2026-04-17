@@ -63,6 +63,9 @@ export interface Projectile {
   h: number;
   alive: boolean;
   kind: "temptation_can" | "temptation_controller" | "prayer" | "homework";
+  // For prayers: the x-position where the projectile was fired so the
+  // engine can kill it after it travels beyond its effective range.
+  spawnX?: number;
 }
 
 export interface Pickup {

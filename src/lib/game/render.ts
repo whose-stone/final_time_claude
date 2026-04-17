@@ -850,18 +850,26 @@ function drawProjectile(ctx: CanvasRenderingContext2D, p: Projectile, camX: numb
   const y = p.pos.y;
   switch (p.kind) {
     case "prayer": {
+      // Fade the prayer out as it approaches max range so the player
+      // gets visual feedback that it's about to expire.
+      const RANGE = 400;
+      const dist = p.spawnX !== undefined ? Math.abs(p.pos.x - p.spawnX) : 0;
+      const fade = dist > RANGE * 0.6 ? 1 - (dist - RANGE * 0.6) / (RANGE * 0.4) : 1;
+      const alpha = Math.max(0.15, Math.min(1, fade));
+      ctx.save();
+      ctx.globalAlpha = alpha;
       // Golden praying hands
       ctx.fillStyle = "rgba(255, 212, 71, 0.5)";
       ctx.beginPath();
       ctx.arc(x + p.w / 2, y + p.h / 2, 14, 0, Math.PI * 2);
       ctx.fill();
       ctx.fillStyle = "#ffd447";
-      // simple hands silhouette
       ctx.fillRect(x + 4, y + 2, 6, 12);
       ctx.fillRect(x + 12, y + 2, 6, 12);
       ctx.fillStyle = "#e0a200";
       ctx.fillRect(x + 6, y, 3, 4);
       ctx.fillRect(x + 13, y, 3, 4);
+      ctx.restore();
       break;
     }
     case "temptation_can": {
