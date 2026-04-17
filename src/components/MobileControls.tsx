@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useRef } from "react";
+import { useCallback } from "react";
 import { Game } from "@/lib/game/engine";
 
 interface Props {
@@ -8,8 +8,6 @@ interface Props {
 }
 
 export default function MobileControls({ game }: Props) {
-  const prevent = (e: React.TouchEvent) => e.preventDefault();
-
   const press = useCallback(
     (key: "left" | "right" | "jump" | "shoot") => {
       game.setInput({ [key]: true });
@@ -25,82 +23,40 @@ export default function MobileControls({ game }: Props) {
   );
 
   return (
-    <div className="mobile-controls" onTouchStart={prevent}>
+    <div
+      style={{
+        maxWidth: 960,
+        margin: "0 auto",
+        padding: "14px 18px 22px",
+        background: "#2a2a33",
+        border: "4px solid #111",
+        borderTop: "none",
+        borderRadius: "0 0 18px 18px",
+        display: "flex",
+        justifyContent: "space-between",
+        alignItems: "center",
+        userSelect: "none",
+        WebkitUserSelect: "none",
+        touchAction: "none",
+      }}
+      onTouchStart={(e) => e.preventDefault()}
+    >
       {/* D-pad — left side */}
-      <div className="dpad">
+      <div style={{ display: "flex", flexDirection: "column", alignItems: "center" }}>
         <DpadBtn dir="up" onDown={() => press("jump")} onUp={() => release("jump")} />
-        <div className="dpad-mid">
+        <div style={{ display: "flex", alignItems: "center" }}>
           <DpadBtn dir="left" onDown={() => press("left")} onUp={() => release("left")} />
-          <div className="dpad-center" />
+          <div style={{ width: 46, height: 46, background: "#3a3a44", border: "2px solid #222" }} />
           <DpadBtn dir="right" onDown={() => press("right")} onUp={() => release("right")} />
         </div>
-        <div className="dpad-down-spacer" />
+        <div style={{ width: 46, height: 46 }} />
       </div>
 
       {/* A / B buttons — right side */}
-      <div className="ab-group">
-        <ABBtn
-          label="B"
-          sub="PRAY"
-          onDown={() => press("shoot")}
-          onUp={() => release("shoot")}
-        />
-        <ABBtn
-          label="A"
-          sub="JUMP"
-          onDown={() => press("jump")}
-          onUp={() => release("jump")}
-        />
+      <div style={{ display: "flex", alignItems: "flex-end", gap: 14 }}>
+        <ABBtn label="B" sub="PRAY" onDown={() => press("shoot")} onUp={() => release("shoot")} />
+        <ABBtn label="A" sub="JUMP" onDown={() => press("jump")} onUp={() => release("jump")} />
       </div>
-
-      <style jsx>{`
-        .mobile-controls {
-          display: none;
-          max-width: 960px;
-          margin: 0 auto;
-          padding: 14px 18px 22px;
-          background: #2a2a33;
-          border: 4px solid #111;
-          border-top: none;
-          border-radius: 0 0 18px 18px;
-          justify-content: space-between;
-          align-items: center;
-          user-select: none;
-          -webkit-user-select: none;
-          touch-action: none;
-        }
-        @media (hover: none) and (pointer: coarse) {
-          .mobile-controls {
-            display: flex;
-          }
-        }
-        .dpad {
-          display: flex;
-          flex-direction: column;
-          align-items: center;
-          gap: 0;
-        }
-        .dpad-mid {
-          display: flex;
-          align-items: center;
-          gap: 0;
-        }
-        .dpad-center {
-          width: 46px;
-          height: 46px;
-          background: #3a3a44;
-          border: 2px solid #222;
-        }
-        .dpad-down-spacer {
-          width: 46px;
-          height: 46px;
-        }
-        .ab-group {
-          display: flex;
-          align-items: flex-end;
-          gap: 14px;
-        }
-      `}</style>
     </div>
   );
 }
@@ -115,25 +71,17 @@ function DpadBtn({
   onUp: () => void;
 }) {
   const arrow = { up: "\u25B2", left: "\u25C0", right: "\u25B6" }[dir];
-  const isVert = dir === "up";
   return (
     <button
-      className="dpad-btn"
-      onTouchStart={(e) => {
-        e.preventDefault();
-        onDown();
-      }}
-      onTouchEnd={(e) => {
-        e.preventDefault();
-        onUp();
-      }}
-      onTouchCancel={() => onUp()}
+      onTouchStart={(e) => { e.preventDefault(); onDown(); }}
+      onTouchEnd={(e) => { e.preventDefault(); onUp(); }}
+      onTouchCancel={onUp}
       onMouseDown={onDown}
       onMouseUp={onUp}
       onMouseLeave={onUp}
       style={{
-        width: isVert ? 46 : 46,
-        height: isVert ? 46 : 46,
+        width: 46,
+        height: 46,
         background: "#4a4a56",
         border: "2px solid #222",
         color: "#ddd",
@@ -165,24 +113,11 @@ function ABBtn({
   onUp: () => void;
 }) {
   return (
-    <div
-      style={{
-        display: "flex",
-        flexDirection: "column",
-        alignItems: "center",
-        gap: 4,
-      }}
-    >
+    <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 4 }}>
       <button
-        onTouchStart={(e) => {
-          e.preventDefault();
-          onDown();
-        }}
-        onTouchEnd={(e) => {
-          e.preventDefault();
-          onUp();
-        }}
-        onTouchCancel={() => onUp()}
+        onTouchStart={(e) => { e.preventDefault(); onDown(); }}
+        onTouchEnd={(e) => { e.preventDefault(); onUp(); }}
+        onTouchCancel={onUp}
         onMouseDown={onDown}
         onMouseUp={onUp}
         onMouseLeave={onUp}
