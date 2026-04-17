@@ -8,6 +8,7 @@ import { Character, DEFAULT_CONFIG, GameConfig, LevelId, Question } from "@/lib/
 import { Game } from "@/lib/game/engine";
 import { GameEvent, LevelStats } from "@/lib/game/types";
 import GameCanvas from "@/components/GameCanvas";
+import MobileControls from "@/components/MobileControls";
 import HUD from "@/components/HUD";
 import TriviaModal from "@/components/TriviaModal";
 import LevelResults from "@/components/LevelResults";
@@ -365,6 +366,7 @@ function GamePageInner() {
       />
 
       <GameCanvas game={g} paused={!!triviaQuestion || !!results} />
+      <MobileControls game={g} />
 
       <div
         style={{
