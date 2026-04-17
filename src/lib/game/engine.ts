@@ -29,6 +29,11 @@ const PRAYER_SPEED = 8.5;
 const TEMPTATION_SPEED = 3.2;
 const HOMEWORK_SPEED = 4.5;
 const INVINCIBLE_TICKS = 90;
+// Bonus points awarded when a gargoyle is defeated with a prayer shot.
+// Stomping does NOT award bonus points — only the prayer-ascension path.
+const PRAYER_BONUS_POINTS = 10;
+// How many frames an angelic gargoyle floats upward before fading out.
+const ANGEL_TICKS = 120;
 
 let nextId = 1;
 const uid = () => nextId++;
@@ -141,20 +146,35 @@ export class Game {
   }
 
   private spawnBibles(n: number) {
-    const minX = 300;
-    const maxX = this.level.width - 300;
+    // Bible blocks are Ten Commandments stone tablets floating at
+    // head-bump height — the player must jump and knock them from below
+    // with their head to activate them (Mario "?"-block style). Placed
+    // high enough that a walking player cannot trigger them by accident.
+    const BLOCK_W = 48;
+    const BLOCK_H = 40;
+    const minX = 360;
+    const maxX = this.level.width - 360;
     const step = (maxX - minX) / Math.max(1, n);
+    // Player top while standing is at groundY - player.h (= groundY - 52).
+    // Peak head height during a jump is approximately groundY - 187. We
+    // choose block tops between groundY - 220 and groundY - 160 so the
+    // block bottom sits in the range groundY - 180 .. groundY - 120 —
+    // always above a standing player's head, always reachable by jumping.
+    const baseTop = this.level.groundY - 220;
     for (let i = 0; i < n; i++) {
       const x = minX + step * i + 40;
-      const y = this.level.groundY - 120 - Math.random() * 80;
+      const yOffset = (i % 3) * 20; // stagger at three heights for variety
+      const y = baseTop + yOffset;
       this.pickups.push({
         id: uid(),
         pos: { x, y },
-        w: PICKUP_W,
-        h: PICKUP_H,
+        w: BLOCK_W,
+        h: BLOCK_H,
         alive: true,
         kind: "bible",
-        bob: Math.random() * Math.PI * 2,
+        bob: 0,
+        used: false,
+        hitTicks: 0,
       });
     }
   }
@@ -251,6 +271,32 @@ export class Game {
         }
       }
     }
+    // Ten Commandments bible blocks — solid from above, head-bumpable
+    // from below. Hitting the underside while rising activates the
+    // block and opens a Bible trivia question.
+    for (const pk of this.pickups) {
+      if (pk.kind !== "bible") continue;
+      if (!rectsOverlap(p.pos.x, p.pos.y, p.w, p.h, pk.pos.x, pk.pos.y, pk.w, pk.h)) {
+        continue;
+      }
+      if (p.vel.y < 0) {
+        // Head-bump from below: clamp the player under the block and
+        // reverse a bit of upward velocity so they fall away cleanly.
+        p.pos.y = pk.pos.y + pk.h;
+        p.vel.y = 1;
+        if (!pk.used) {
+          pk.used = true;
+          pk.hitTicks = 12; // brief shake/bounce animation for the block
+          this.paused = true;
+          this.onEvent({ type: "bible_collected" });
+        }
+      } else if (p.vel.y > 0) {
+        // Land on top — the block is still solid terrain even after use.
+        p.pos.y = pk.pos.y - p.h;
+        p.vel.y = 0;
+        p.onGround = true;
+      }
+    }
     if (p.pos.y > CANVAS_H + 80) this.kill();
 
     // Shoot prayer
@@ -293,6 +339,18 @@ export class Game {
       if (!g.alive) {
         if (g.explodeTicks > 0) g.explodeTicks--;
         if (g.amenTicks > 0) g.amenTicks--;
+        if (g.sitting) {
+          // Keep the defeated teacher glued to the ground and advance his
+          // sip cycle so the renderer can animate a drink every ~2s.
+          g.pos.y = this.level.groundY - g.h;
+          g.sipTicks = (g.sipTicks ?? 0) + 1;
+        }
+        if (g.ascending) {
+          // Float straight up, ease outward slightly, fade out over time.
+          g.pos.y -= 1.6;
+          g.ascendTicks = (g.ascendTicks ?? 0) - 1;
+          if ((g.ascendTicks ?? 0) <= 0) g.ascending = false;
+        }
         continue;
       }
 
@@ -334,10 +392,32 @@ export class Game {
         ) &&
         this.player.invincibleTicks <= 0
       ) {
-        this.onEvent({ type: "player_hit" });
-        this.kill();
+        // Mario-style stomp: if the player is falling and their feet are
+        // landing on the top of the gargoyle, the gargoyle is knocked off
+        // instead of the player getting hit. Doesn't apply to the boss —
+        // he's a person, not stone, and has his own HP/hit flow.
+        const playerFeet = this.player.pos.y + this.player.h;
+        const isFalling = this.player.vel.y > 1;
+        const feetOnHead = playerFeet <= g.pos.y + 18; // top ~18px of gargoyle
+        if (!g.isBoss && isFalling && feetOnHead) {
+          this.stompGargoyle(g);
+        } else {
+          this.onEvent({ type: "player_hit" });
+          this.kill();
+        }
       }
     }
+  }
+
+  private stompGargoyle(g: Gargoyle) {
+    // Stomps crumble the gargoyle into stone (no angel, no bonus score)
+    // and give the player a small bounce.
+    this.crumbleGargoyle(g);
+    this.player.vel.y = JUMP_V * 0.75;
+    this.player.onGround = false;
+    // Short invincibility so the player doesn't get instantly clipped by
+    // any debris overlap on the frame after the stomp.
+    this.player.invincibleTicks = Math.max(this.player.invincibleTicks, 10);
   }
 
   private updateBoss(g: Gargoyle) {
@@ -439,7 +519,7 @@ export class Game {
             rectsOverlap(proj.pos.x, proj.pos.y, proj.w, proj.h, g.pos.x, g.pos.y, g.w, g.h)
           ) {
             proj.alive = false;
-            this.hitGargoyle(g);
+            this.prayerHitGargoyle(g);
             break;
           }
         }
@@ -466,28 +546,75 @@ export class Game {
     this.projectiles = this.projectiles.filter((p) => p.alive);
   }
 
-  private hitGargoyle(g: Gargoyle) {
+  /**
+   * Handle a prayer projectile striking a gargoyle. Regular gargoyles
+   * turn into a translucent angel that floats up off the screen and the
+   * player earns a small bonus. The boss uses its own HP flow (3 prayer
+   * hits then sits down with a Diet Mountain Dew).
+   */
+  private prayerHitGargoyle(g: Gargoyle) {
     if (g.isBoss) {
-      g.bossHp = (g.bossHp ?? 1) - 1;
-      g.amenTicks = 30;
-      this.spawnExplosion(g, 10);
-      if (g.bossHp <= 0) {
-        g.alive = false;
-        g.explodeTicks = 60;
-        g.amenTicks = 120;
-        this.spawnExplosion(g, 40);
-        this.stats.gargoylesDefeated++;
-        this.bossDefeated = true;
-        this.onEvent({ type: "gargoyle_defeated" });
-      }
+      this.bossPrayerHit(g);
       return;
     }
+    g.alive = false;
+    g.ascending = true;
+    g.ascendTicks = ANGEL_TICKS;
+    g.amenTicks = 80;
+    // Freeze any sideways drift so the angel rises straight up.
+    g.vel.x = 0;
+    g.vel.y = 0;
+    this.stats.score += PRAYER_BONUS_POINTS;
+    this.stats.gargoylesDefeated++;
+    this.onEvent({ type: "gargoyle_defeated" });
+  }
+
+  /**
+   * Handle the player landing on top of a gargoyle (Mario-style stomp).
+   * The gargoyle crumbles into stone pieces with an AMEN popup. No bonus
+   * score — that's reserved for prayer kills.
+   */
+  private crumbleGargoyle(g: Gargoyle) {
     g.alive = false;
     g.explodeTicks = 45;
     g.amenTicks = 80;
     this.spawnExplosion(g, 22);
     this.stats.gargoylesDefeated++;
     this.onEvent({ type: "gargoyle_defeated" });
+  }
+
+  private bossPrayerHit(g: Gargoyle) {
+    g.bossHp = (g.bossHp ?? 1) - 1;
+    g.amenTicks = 30;
+    // A small paper-puff stagger on a non-final hit — no stone explosion
+    // since the boss is a person, not a gargoyle.
+    if ((g.bossHp ?? 0) > 0) {
+      this.spawnTeacherStagger(g, 6);
+      return;
+    }
+    // Final hit: the teacher sits down with a Diet Mountain Dew and smiles.
+    g.alive = false;
+    g.explodeTicks = 0;
+    g.amenTicks = 160;
+    g.sitting = true;
+    g.sipTicks = 0;
+    g.vel = { x: 0, y: 0 };
+    this.stats.gargoylesDefeated++;
+    this.bossDefeated = true;
+    this.onEvent({ type: "gargoyle_defeated" });
+  }
+
+  private spawnTeacherStagger(g: Gargoyle, count: number) {
+    // Little paper puffs (not stone) for when the boss is hit but not dead.
+    for (let i = 0; i < count; i++) {
+      this.particles.push({
+        pos: { x: g.pos.x + g.w / 2, y: g.pos.y + g.h / 3 },
+        vel: { x: (Math.random() - 0.5) * 4, y: (Math.random() - 0.6) * 4 },
+        life: 30 + Math.random() * 15,
+        color: ["#ffffff", "#eaeaea", "#ffd447"][Math.floor(Math.random() * 3)],
+        size: 3 + Math.random() * 3,
+      });
+    }
   }
 
   private spawnExplosion(g: Gargoyle, count: number) {
@@ -505,6 +632,14 @@ export class Game {
   // ---- Pickups ----
   private updatePickups() {
     for (const pk of this.pickups) {
+      // Tick the Ten Commandments block "hit" animation regardless of the
+      // paused flag so the shake completes even while the trivia modal is
+      // open. Bible blocks themselves are handled entirely in
+      // updatePlayer (solid collision + head-bump activation).
+      if (pk.kind === "bible") {
+        if ((pk.hitTicks ?? 0) > 0) pk.hitTicks = (pk.hitTicks ?? 0) - 1;
+        continue;
+      }
       if (!pk.alive) continue;
       pk.bob += 0.08;
       const bobY = Math.sin(pk.bob) * 4;
@@ -522,8 +657,7 @@ export class Game {
       ) {
         pk.alive = false;
         this.paused = true;
-        if (pk.kind === "bible") this.onEvent({ type: "bible_collected" });
-        else this.onEvent({ type: "pen_collected", questionIndex: pk.questionIndex ?? 0 });
+        this.onEvent({ type: "pen_collected", questionIndex: pk.questionIndex ?? 0 });
       }
     }
   }

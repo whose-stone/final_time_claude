@@ -10,7 +10,14 @@ import {
   LevelResult,
   PlayerState,
   Question,
+  QuestionCategory,
 } from "./types";
+
+// Back-compat helper: questions written before `category` existed were all
+// Bible power-up trivia. Treat missing values as "bible".
+function normalizeQuestion(q: Question): Question {
+  return { ...q, category: q.category ?? "bible" };
+}
 
 // Realtime Database paths:
 //   /config/game                     -> GameConfig
@@ -43,11 +50,23 @@ export async function saveGameConfig(cfg: GameConfig): Promise<void> {
 }
 
 // ------- Questions -------
-export async function loadQuestions(level?: LevelId): Promise<Question[]> {
+function filterQuestions(
+  qs: Question[],
+  level?: LevelId,
+  category?: QuestionCategory,
+): Question[] {
+  let out = qs.map(normalizeQuestion);
+  if (level != null) out = out.filter((q) => q.level === level);
+  if (category != null) out = out.filter((q) => q.category === category);
+  return out;
+}
+
+export async function loadQuestions(
+  level?: LevelId,
+  category?: QuestionCategory,
+): Promise<Question[]> {
   const { db } = getFirebase();
-  if (!db) {
-    return level ? DEFAULT_QUESTIONS.filter((q) => q.level === level) : DEFAULT_QUESTIONS;
-  }
+  if (!db) return filterQuestions(DEFAULT_QUESTIONS, level, category);
   try {
     const snap = await get(ref(db, "questions"));
     let qs: Question[] = [];
@@ -56,17 +75,19 @@ export async function loadQuestions(level?: LevelId): Promise<Question[]> {
       qs = Object.keys(val).map((k) => ({ ...val[k], id: k }));
     }
     if (qs.length === 0) qs = DEFAULT_QUESTIONS;
-    return level ? qs.filter((q) => q.level === level) : qs;
+    return filterQuestions(qs, level, category);
   } catch (err) {
     console.warn("loadQuestions failed, using defaults", err);
-    return level ? DEFAULT_QUESTIONS.filter((q) => q.level === level) : DEFAULT_QUESTIONS;
+    return filterQuestions(DEFAULT_QUESTIONS, level, category);
   }
 }
 
 export async function saveQuestion(q: Question): Promise<void> {
   const { db } = getFirebase();
   if (!db) return;
-  await set(ref(db, `questions/${q.id}`), q);
+  // Ensure category is always set so the game engine can route pickups.
+  const toSave: Question = { ...q, category: q.category ?? "bible" };
+  await set(ref(db, `questions/${q.id}`), toSave);
 }
 
 export async function deleteQuestion(id: string): Promise<void> {
@@ -84,6 +105,19 @@ export async function seedQuestionsIfEmpty(): Promise<void> {
     for (const q of DEFAULT_QUESTIONS) payload[q.id] = q;
     await set(ref(db, "questions"), payload);
   }
+}
+
+/**
+ * Wipe the /questions node and repopulate it with the default seed set
+ * (Bible power-up trivia + ACU-history graded questions). Intended for
+ * admins who need to refresh the defaults after category/content changes.
+ */
+export async function reseedQuestions(): Promise<void> {
+  const { db } = getFirebase();
+  if (!db) return;
+  const payload: Record<string, Question> = {};
+  for (const q of DEFAULT_QUESTIONS) payload[q.id] = q;
+  await set(ref(db, "questions"), payload);
 }
 
 // ------- Players -------

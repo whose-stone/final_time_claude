@@ -40,6 +40,19 @@ export interface Gargoyle {
   bossHp?: number;
   onGround?: boolean;
   jumpCooldown?: number;
+  // When the teacher boss is defeated he doesn't explode — he sits down
+  // and drinks a Diet Mountain Dew. This flag marks that animation state
+  // so the renderer can keep drawing him in a happy seated pose and
+  // animate a periodic sip cycle.
+  sitting?: boolean;
+  sipTicks?: number;
+  // When a gargoyle is defeated by a prayer projectile it doesn't crumble
+  // — it floats up as a transparent angel. `ascending` toggles the
+  // animation on and `ascendTicks` counts down to 0, at which point the
+  // angel fully fades out. Stomps still use explodeTicks for a stone
+  // crumble effect.
+  ascending?: boolean;
+  ascendTicks?: number;
 }
 
 export interface Projectile {
@@ -59,8 +72,17 @@ export interface Pickup {
   h: number;
   alive: boolean;
   kind: "bible" | "penpaper";
-  questionIndex?: number; // for penpaper: which of the level questions (0..n-1)
-  bob: number; // for floating animation
+  // For pen+paper pickups: which of the level's graded questions this one
+  // opens (0-indexed).
+  questionIndex?: number;
+  bob: number; // for floating animation (pen+paper only)
+  // Bible pickups are stone-tablet blocks that the player head-bumps.
+  // Once hit they stay in the world but switch to a gray "used" look
+  // and stop triggering trivia. Pen+paper pickups ignore this flag.
+  used?: boolean;
+  // Frame counter for the block's "just got hit" animation (short upward
+  // nudge before settling back into place). Only used by bible blocks.
+  hitTicks?: number;
 }
 
 export interface Particle {

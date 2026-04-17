@@ -32,11 +32,28 @@ export default function FirebirdSprite({
       <rect x="28" y="4" width="4" height="4" fill="#ff9f1c" />
       <rect x="32" y="8" width="4" height="4" fill="#ff5a00" />
       {character === "girl" && (
-        <>
-          {/* Pink bow */}
-          <rect x="34" y="6" width="4" height="4" fill="#ff7aa2" />
-          <rect x="38" y="4" width="4" height="6" fill="#ff4d88" />
-        </>
+        <g>
+          {/* Hair bow — two pink loops, darker knot, ribbon tails. Sits on
+              top of the head centered over the flame mane so it reads as
+              a little girl's bow tied in her "hair". */}
+          {/* Ribbon tails behind the head */}
+          <rect x="27" y="10" width="2" height="5" fill="#ff4d88" />
+          <rect x="35" y="10" width="2" height="5" fill="#ff4d88" />
+          <rect x="28" y="14" width="2" height="2" fill="#cc2e68" />
+          <rect x="34" y="14" width="2" height="2" fill="#cc2e68" />
+          {/* Left loop */}
+          <rect x="20" y="2" width="10" height="8" fill="#ff4d88" />
+          <rect x="20" y="8" width="10" height="2" fill="#cc2e68" />
+          <rect x="21" y="3" width="3" height="2" fill="#ffb3cc" />
+          {/* Right loop */}
+          <rect x="34" y="2" width="10" height="8" fill="#ff4d88" />
+          <rect x="34" y="8" width="10" height="2" fill="#cc2e68" />
+          <rect x="40" y="3" width="3" height="2" fill="#ffb3cc" />
+          {/* Knot */}
+          <rect x="30" y="2" width="4" height="8" fill="#cc2e68" />
+          <rect x="30" y="4" width="4" height="2" fill="#ff7aa2" />
+          <rect x="31" y="3" width="2" height="1" fill="#ffd6e5" />
+        </g>
       )}
       {/* Head */}
       <rect x="18" y="12" width="28" height="16" fill="#ba0c2f" />

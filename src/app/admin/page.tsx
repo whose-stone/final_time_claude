@@ -8,6 +8,7 @@ import {
   listPlayers,
   loadGameConfig,
   loadQuestions,
+  reseedQuestions,
   resetPlayer,
   saveGameConfig,
   saveQuestion,
@@ -23,10 +24,11 @@ import {
   letterGrade,
   PlayerState,
   Question,
+  QuestionCategory,
 } from "@/lib/types";
 import { downloadPlayerPdf } from "@/lib/pdf";
 
-type Tab = "players" | "questions" | "config";
+type Tab = "players" | "questions" | "config" | "playtest";
 
 export default function AdminPage() {
   const { user, isAdmin, loading, logout } = useAuth();
@@ -112,6 +114,12 @@ export default function AdminPage() {
         >
           Game Config
         </button>
+        <button
+          className={tab === "playtest" ? "btn-red" : ""}
+          onClick={() => setTab("playtest")}
+        >
+          Playtest
+        </button>
       </div>
 
       {loadingData && <p>Loading data...</p>}
@@ -132,7 +140,73 @@ export default function AdminPage() {
           await refreshAll();
         }} />
       )}
+      {tab === "playtest" && <PlaytestPanel />}
     </main>
+  );
+}
+
+// ---------------- Playtest ----------------
+function PlaytestPanel() {
+  const router = useRouter();
+  const [level, setLevel] = useState<LevelId>(1);
+  const [character, setCharacter] = useState<"boy" | "girl">("boy");
+
+  function launch() {
+    const params = new URLSearchParams({
+      level: String(level),
+      char: character,
+      admin: "1",
+    });
+    router.push(`/game?${params.toString()}`);
+  }
+
+  return (
+    <div
+      style={{
+        background: "#fff",
+        border: "3px solid #111",
+        borderRadius: 8,
+        padding: 20,
+        maxWidth: 640,
+      }}
+    >
+      <h3 style={{ marginTop: 0 }}>Admin Playtest</h3>
+      <p style={{ fontSize: 11, lineHeight: 1.5, color: "#333" }}>
+        Jump directly into any level to test gameplay, boss fight, and
+        question ordering. Admin playtest sessions bypass checkpoint
+        saves so you can replay freely without overwriting student
+        progress.
+      </p>
+      <div style={{ display: "grid", gap: 10, fontSize: 10, marginTop: 12 }}>
+        <Row label="Level">
+          <select
+            value={level}
+            onChange={(e) => setLevel(parseInt(e.target.value, 10) as LevelId)}
+          >
+            {([1, 2, 3, 4, 5] as LevelId[]).map((l) => (
+              <option key={l} value={l}>
+                {l}. {LEVEL_NAMES[l]}
+                {l === 5 ? " (Boss)" : ""}
+              </option>
+            ))}
+          </select>
+        </Row>
+        <Row label="Character">
+          <select
+            value={character}
+            onChange={(e) => setCharacter(e.target.value as "boy" | "girl")}
+          >
+            <option value="boy">Boy Firebird</option>
+            <option value="girl">Girl Firebird</option>
+          </select>
+        </Row>
+      </div>
+      <div className="btn-row" style={{ marginTop: 16 }}>
+        <button className="btn-red" onClick={launch}>
+          ▶ Launch Playtest
+        </button>
+      </div>
+    </div>
   );
 }
 
@@ -252,17 +326,37 @@ function QuestionsPanel({
 }) {
   const [editing, setEditing] = useState<Question | null>(null);
   const [filterLevel, setFilterLevel] = useState<LevelId | 0>(0);
+  const [filterCategory, setFilterCategory] = useState<QuestionCategory | "all">("all");
+  const [reseeding, setReseeding] = useState(false);
 
   function blank(): Question {
     return {
       id: `q-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
       level: filterLevel || 1,
+      category: filterCategory === "all" ? "test" : filterCategory,
       type: "multiple_choice",
       prompt: "",
       choices: ["", "", "", ""],
       answer: "",
       points: defaultPoints,
     };
+  }
+
+  async function handleReseed() {
+    const ok = confirm(
+      "Reseed ALL questions from the built-in defaults?\n\n" +
+        "This DELETES every existing question (Bible + test) and replaces them " +
+        "with the default Bible trivia + ACU-history test questions. " +
+        "Student progress is not affected.",
+    );
+    if (!ok) return;
+    setReseeding(true);
+    try {
+      await reseedQuestions();
+      await onReload();
+    } finally {
+      setReseeding(false);
+    }
   }
 
   async function handleSave() {
@@ -290,11 +384,16 @@ function QuestionsPanel({
     await onReload();
   }
 
-  const filtered = filterLevel === 0 ? questions : questions.filter((q) => q.level === filterLevel);
+  const normalized = questions.map((q) => ({ ...q, category: q.category ?? "bible" }));
+  const filtered = normalized.filter((q) => {
+    if (filterLevel !== 0 && q.level !== filterLevel) return false;
+    if (filterCategory !== "all" && q.category !== filterCategory) return false;
+    return true;
+  });
 
   return (
     <>
-      <div className="btn-row" style={{ marginBottom: 10 }}>
+      <div className="btn-row" style={{ marginBottom: 10, alignItems: "center" }}>
         <label style={{ fontSize: 10 }}>Level:</label>
         <select value={filterLevel} onChange={(e) => setFilterLevel(parseInt(e.target.value, 10) as 0 | LevelId)}>
           <option value={0}>All</option>
@@ -304,8 +403,25 @@ function QuestionsPanel({
             </option>
           ))}
         </select>
+        <label style={{ fontSize: 10 }}>Category:</label>
+        <select
+          value={filterCategory}
+          onChange={(e) => setFilterCategory(e.target.value as QuestionCategory | "all")}
+        >
+          <option value="all">All</option>
+          <option value="bible">📖 Bible (power-up)</option>
+          <option value="test">📝 Test (graded)</option>
+        </select>
         <button className="btn-red" onClick={() => setEditing(blank())}>
           + Add Question
+        </button>
+        <button
+          className="btn-navy"
+          onClick={handleReseed}
+          disabled={reseeding}
+          title="Wipe and reload the built-in defaults (Bible trivia + ACU history)"
+        >
+          {reseeding ? "Reseeding..." : "Reseed Defaults"}
         </button>
       </div>
 
@@ -314,7 +430,7 @@ function QuestionsPanel({
           <thead>
             <tr>
               <th>Level</th>
-              <th>Type</th>
+              <th>Category</th>
               <th>Prompt</th>
               <th>Answer</th>
               <th>Points</th>
@@ -325,7 +441,7 @@ function QuestionsPanel({
             {filtered.map((q) => (
               <tr key={q.id}>
                 <td>{q.level}. {LEVEL_NAMES[q.level]}</td>
-                <td>{q.type === "multiple_choice" ? "MC" : "Text"}</td>
+                <td>{q.category === "bible" ? "📖 Bible" : "📝 Test"}</td>
                 <td style={{ maxWidth: 400 }}>{q.prompt}</td>
                 <td>{q.answer}</td>
                 <td>{q.points}</td>
@@ -383,19 +499,15 @@ function QuestionEditor({
               ))}
             </select>
           </Row>
-          <Row label="Type">
+          <Row label="Category">
             <select
-              value={question.type}
+              value={question.category ?? "bible"}
               onChange={(e) =>
-                onChange({
-                  ...question,
-                  type: e.target.value as Question["type"],
-                  choices: e.target.value === "multiple_choice" ? (question.choices ?? ["", "", "", ""]) : undefined,
-                })
+                onChange({ ...question, category: e.target.value as QuestionCategory })
               }
             >
-              <option value="multiple_choice">Multiple Choice</option>
-              <option value="text">Text Response</option>
+              <option value="bible">📖 Bible power-up (floating Bible pickup)</option>
+              <option value="test">📝 Test question (pen &amp; paper pickup)</option>
             </select>
           </Row>
           <Row label="Prompt">
@@ -405,43 +517,31 @@ function QuestionEditor({
               onChange={(e) => onChange({ ...question, prompt: e.target.value })}
             />
           </Row>
-          {question.type === "multiple_choice" && (
-            <>
-              {(question.choices ?? ["", "", "", ""]).map((c, i) => (
-                <Row key={i} label={`Choice ${i + 1}`}>
-                  <input
-                    value={c}
-                    onChange={(e) => {
-                      const arr = [...(question.choices ?? ["", "", "", ""])];
-                      arr[i] = e.target.value;
-                      onChange({ ...question, choices: arr });
-                    }}
-                  />
-                </Row>
-              ))}
-              <Row label="Correct Answer">
-                <select
-                  value={question.answer}
-                  onChange={(e) => onChange({ ...question, answer: e.target.value })}
-                >
-                  <option value="">-- pick one --</option>
-                  {(question.choices ?? []).filter(Boolean).map((c) => (
-                    <option key={c} value={c}>
-                      {c}
-                    </option>
-                  ))}
-                </select>
-              </Row>
-            </>
-          )}
-          {question.type === "text" && (
-            <Row label="Accepted Answer">
+          {(question.choices ?? ["", "", "", ""]).map((c, i) => (
+            <Row key={i} label={`Choice ${i + 1}`}>
               <input
-                value={question.answer}
-                onChange={(e) => onChange({ ...question, answer: e.target.value })}
+                value={c}
+                onChange={(e) => {
+                  const arr = [...(question.choices ?? ["", "", "", ""])];
+                  arr[i] = e.target.value;
+                  onChange({ ...question, choices: arr });
+                }}
               />
             </Row>
-          )}
+          ))}
+          <Row label="Correct Answer">
+            <select
+              value={question.answer}
+              onChange={(e) => onChange({ ...question, answer: e.target.value })}
+            >
+              <option value="">-- pick one --</option>
+              {(question.choices ?? []).filter(Boolean).map((c) => (
+                <option key={c} value={c}>
+                  {c}
+                </option>
+              ))}
+            </select>
+          </Row>
           <Row label="Points">
             <input
               type="number"

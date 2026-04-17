@@ -52,12 +52,13 @@
       ".write": "auth != null && root.child('players').child(auth.uid).child('isAdmin').val() === true",
       "$qid": {
         ".validate": "newData.hasChildren(['id','level','type','prompt','answer','points'])",
-        "id":      { ".validate": "newData.isString()" },
-        "level":   { ".validate": "newData.isNumber() && newData.val() >= 1 && newData.val() <= 5" },
-        "type":    { ".validate": "newData.isString() && (newData.val() === 'multiple_choice' || newData.val() === 'text')" },
-        "prompt":  { ".validate": "newData.isString()" },
-        "answer":  { ".validate": "newData.isString()" },
-        "points":  { ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 1000" },
+        "id":       { ".validate": "newData.isString()" },
+        "level":    { ".validate": "newData.isNumber() && newData.val() >= 1 && newData.val() <= 5" },
+        "category": { ".validate": "newData.isString() && (newData.val() === 'bible' || newData.val() === 'test')" },
+        "type":     { ".validate": "newData.isString() && newData.val() === 'multiple_choice'" },
+        "prompt":   { ".validate": "newData.isString()" },
+        "answer":   { ".validate": "newData.isString()" },
+        "points":   { ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 1000" },
         "choices": {
           "$i": { ".validate": "newData.isString()" }
         },

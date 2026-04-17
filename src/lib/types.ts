@@ -10,13 +10,32 @@ export const LEVEL_NAMES: Record<LevelId, string> = {
   5: "Castle",
 };
 
+// Rough academic grade level that each stage's Bible trivia is written for.
+// Used as guidance for admins, not enforced by code.
+export const LEVEL_DIFFICULTY: Record<LevelId, string> = {
+  1: "1st grade",
+  2: "2nd grade",
+  3: "3rd grade",
+  4: "4th grade",
+  5: "5th grade",
+};
+
+export type QuestionCategory = "bible" | "test";
+
 export interface Question {
   id: string;
   level: LevelId;
-  type: "multiple_choice" | "text";
+  // `category` distinguishes floating-Bible power-up trivia ("bible") from
+  // the pen+paper graded level questions ("test"). Older records written
+  // before this field existed are treated as "bible".
+  category?: QuestionCategory;
+  // All questions are multiple-choice. The field is kept as a tagged
+  // constant so RTDB validation and future question formats can extend
+  // cleanly without a breaking schema change.
+  type: "multiple_choice";
   prompt: string;
-  choices?: string[]; // for multiple_choice, 4 items
-  answer: string; // correct answer (for MC this is one of choices; for text this is the accepted answer)
+  choices?: string[]; // exactly 4 choices in practice
+  answer: string; // correct answer — must match one of the choices
   points: number;
 }
 
@@ -82,40 +101,96 @@ export function letterGrade(percent: number): "A" | "B" | "C" | "D" | "F" {
   return "F";
 }
 
-// Default seed questions used if Firestore has none for a level.
+// ---------------------------------------------------------------------------
+// Default Bible trivia (power-up pickups).
+// Unique across all levels. Difficulty scales from 1st-grade (Beach) up to
+// 5th-grade (Castle). Progression: Creation -> Exodus -> Patriarchs/Flood
+// -> Judges & Kings -> Jesus & New Testament.
+// ---------------------------------------------------------------------------
+const BIBLE_QUESTIONS: Question[] = [
+  // Level 1 — Beach · 1st grade · Creation & the Garden
+  { id: "bible-1-1", level: 1, category: "bible", type: "multiple_choice", prompt: "Who created the heavens and the earth?", choices: ["God", "A king", "A wizard", "Nobody"], answer: "God", points: 20 },
+  { id: "bible-1-2", level: 1, category: "bible", type: "multiple_choice", prompt: "What did God make on the very first day?", choices: ["The sun", "Light", "Fish", "People"], answer: "Light", points: 20 },
+  { id: "bible-1-3", level: 1, category: "bible", type: "multiple_choice", prompt: "What was the name of the first man?", choices: ["Noah", "Adam", "Moses", "David"], answer: "Adam", points: 20 },
+  { id: "bible-1-4", level: 1, category: "bible", type: "multiple_choice", prompt: "Where did God place the first people to live?", choices: ["A boat", "A cave", "The Garden of Eden", "A castle"], answer: "The Garden of Eden", points: 20 },
+  { id: "bible-1-5", level: 1, category: "bible", type: "multiple_choice", prompt: "On which day did God rest from creating?", choices: ["The 1st", "The 3rd", "The 5th", "The 7th"], answer: "The 7th", points: 20 },
+
+  // Level 2 — Desert · 2nd grade · Moses & Exodus
+  { id: "bible-2-1", level: 2, category: "bible", type: "multiple_choice", prompt: "Who led God's people out of Egypt?", choices: ["Joshua", "Moses", "Samuel", "Aaron"], answer: "Moses", points: 20 },
+  { id: "bible-2-2", level: 2, category: "bible", type: "multiple_choice", prompt: "What did God give Moses on Mount Sinai?", choices: ["A golden crown", "A sword", "The Ten Commandments", "A flag"], answer: "The Ten Commandments", points: 20 },
+  { id: "bible-2-3", level: 2, category: "bible", type: "multiple_choice", prompt: "What bread-like food fell from heaven in the desert?", choices: ["Pizza", "Manna", "Bagels", "Bread rolls"], answer: "Manna", points: 20 },
+  { id: "bible-2-4", level: 2, category: "bible", type: "multiple_choice", prompt: "What did Moses strike to make water come out?", choices: ["A tree", "A cloud", "A rock", "The ground"], answer: "A rock", points: 20 },
+  { id: "bible-2-5", level: 2, category: "bible", type: "multiple_choice", prompt: "Which sea did God split for the Israelites?", choices: ["Dead Sea", "Red Sea", "Sea of Galilee", "Mediterranean Sea"], answer: "Red Sea", points: 20 },
+
+  // Level 3 — Forest · 3rd grade · Noah, Abraham, Joseph
+  { id: "bible-3-1", level: 3, category: "bible", type: "multiple_choice", prompt: "Who built a giant ark to survive a flood?", choices: ["Abraham", "Noah", "Isaac", "Jacob"], answer: "Noah", points: 20 },
+  { id: "bible-3-2", level: 3, category: "bible", type: "multiple_choice", prompt: "How many days and nights did the flood rain?", choices: ["7", "20", "40", "100"], answer: "40", points: 20 },
+  { id: "bible-3-3", level: 3, category: "bible", type: "multiple_choice", prompt: "What did God put in the sky as a promise after the flood?", choices: ["A dove", "A rainbow", "A star", "A cloud"], answer: "A rainbow", points: 20 },
+  { id: "bible-3-4", level: 3, category: "bible", type: "multiple_choice", prompt: "Whose coat was described as having many colors?", choices: ["Jacob's", "Joseph's", "Esau's", "Reuben's"], answer: "Joseph's", points: 20 },
+  { id: "bible-3-5", level: 3, category: "bible", type: "multiple_choice", prompt: "To whom did God promise to make a great nation?", choices: ["Abraham", "Elijah", "John", "Saul"], answer: "Abraham", points: 20 },
+
+  // Level 4 — Arctic · 4th grade · Judges, Kings, Prophets
+  { id: "bible-4-1", level: 4, category: "bible", type: "multiple_choice", prompt: "Who defeated the giant Goliath with a sling?", choices: ["Saul", "David", "Jonathan", "Samson"], answer: "David", points: 20 },
+  { id: "bible-4-2", level: 4, category: "bible", type: "multiple_choice", prompt: "Which prophet was kept safe in a den of lions?", choices: ["Elijah", "Daniel", "Isaiah", "Jeremiah"], answer: "Daniel", points: 20 },
+  { id: "bible-4-3", level: 4, category: "bible", type: "multiple_choice", prompt: "Who was swallowed by a great fish for three days?", choices: ["Peter", "Paul", "Jonah", "John"], answer: "Jonah", points: 20 },
+  { id: "bible-4-4", level: 4, category: "bible", type: "multiple_choice", prompt: "Which Israelite king is known for his wisdom?", choices: ["Saul", "David", "Solomon", "Hezekiah"], answer: "Solomon", points: 20 },
+  { id: "bible-4-5", level: 4, category: "bible", type: "multiple_choice", prompt: "Whose long hair was the secret to his great strength?", choices: ["Gideon", "Samson", "Elisha", "Barak"], answer: "Samson", points: 20 },
+
+  // Level 5 — Castle · 5th grade · Jesus & the New Testament
+  { id: "bible-5-1", level: 5, category: "bible", type: "multiple_choice", prompt: "In what town was Jesus born?", choices: ["Nazareth", "Bethlehem", "Jerusalem", "Capernaum"], answer: "Bethlehem", points: 25 },
+  { id: "bible-5-2", level: 5, category: "bible", type: "multiple_choice", prompt: "How many apostles did Jesus choose to follow Him closely?", choices: ["7", "10", "12", "15"], answer: "12", points: 25 },
+  { id: "bible-5-3", level: 5, category: "bible", type: "multiple_choice", prompt: "Which disciple denied knowing Jesus three times?", choices: ["John", "Peter", "Thomas", "Andrew"], answer: "Peter", points: 25 },
+  { id: "bible-5-4", level: 5, category: "bible", type: "multiple_choice", prompt: "On which day did Jesus rise from the dead?", choices: ["The first day", "The second day", "The third day", "The seventh day"], answer: "The third day", points: 25 },
+  { id: "bible-5-5", level: 5, category: "bible", type: "multiple_choice", prompt: "What is the first book of the New Testament?", choices: ["Acts", "Mark", "Matthew", "John"], answer: "Matthew", points: 25 },
+];
+
+// ---------------------------------------------------------------------------
+// Default graded "test" questions (pen + paper pickups). These are about
+// Arizona Christian University history and progress from easy (school
+// identity) through location, academics, athletics, and traditions. Admins
+// are expected to replace these with their own classroom content.
+// ---------------------------------------------------------------------------
+const ACU_TEST_QUESTIONS: Question[] = [
+  // Level 1 — Identity basics
+  { id: "acu-1-1", level: 1, category: "test", type: "multiple_choice", prompt: "What does \"ACU\" stand for?", choices: ["American Christian University", "Arizona Christian University", "Atlanta Christian University", "Arizona Community University"], answer: "Arizona Christian University", points: 20 },
+  { id: "acu-1-2", level: 1, category: "test", type: "multiple_choice", prompt: "What is ACU's mascot?", choices: ["Wildcats", "Eagles", "Firebirds", "Lions"], answer: "Firebirds", points: 20 },
+  { id: "acu-1-3", level: 1, category: "test", type: "multiple_choice", prompt: "In what U.S. state is ACU located?", choices: ["California", "Arizona", "Nevada", "Texas"], answer: "Arizona", points: 20 },
+  { id: "acu-1-4", level: 1, category: "test", type: "multiple_choice", prompt: "ACU is best described as what kind of school?", choices: ["Public state school", "Christian university", "Community college", "Military academy"], answer: "Christian university", points: 20 },
+  { id: "acu-1-5", level: 1, category: "test", type: "multiple_choice", prompt: "Which pair best represents ACU's main school colors?", choices: ["Black and White", "Blue and Silver", "Crimson and Gold", "Green and Orange"], answer: "Crimson and Gold", points: 20 },
+
+  // Level 2 — Location & founding
+  { id: "acu-2-1", level: 2, category: "test", type: "multiple_choice", prompt: "ACU's main campus is located in which Arizona city?", choices: ["Tucson", "Flagstaff", "Glendale", "Mesa"], answer: "Glendale", points: 20 },
+  { id: "acu-2-2", level: 2, category: "test", type: "multiple_choice", prompt: "In which decade was ACU originally founded?", choices: ["1940s", "1960s", "1980s", "2000s"], answer: "1960s", points: 20 },
+  { id: "acu-2-3", level: 2, category: "test", type: "multiple_choice", prompt: "Is ACU a private or a public university?", choices: ["Private", "Public", "Federal", "Military"], answer: "Private", points: 20 },
+  { id: "acu-2-4", level: 2, category: "test", type: "multiple_choice", prompt: "What religious tradition is ACU rooted in?", choices: ["Buddhist", "Christian", "Jewish", "Secular"], answer: "Christian", points: 20 },
+  { id: "acu-2-5", level: 2, category: "test", type: "multiple_choice", prompt: "How many years does a typical ACU undergraduate degree take?", choices: ["2", "3", "4", "6"], answer: "4", points: 20 },
+
+  // Level 3 — Academics & worldview
+  { id: "acu-3-1", level: 3, category: "test", type: "multiple_choice", prompt: "Which book is foundational to ACU's curriculum and worldview?", choices: ["The Quran", "The Torah", "The Bible", "The Mahabharata"], answer: "The Bible", points: 20 },
+  { id: "acu-3-2", level: 3, category: "test", type: "multiple_choice", prompt: "ACU is generally described as what kind of Christian school?", choices: ["Roman Catholic", "Eastern Orthodox", "Nondenominational Christian", "Secular"], answer: "Nondenominational Christian", points: 20 },
+  { id: "acu-3-3", level: 3, category: "test", type: "multiple_choice", prompt: "What kind of worldview does ACU teach from?", choices: ["Marxist", "Biblical", "Postmodern", "Atheist"], answer: "Biblical", points: 20 },
+  { id: "acu-3-4", level: 3, category: "test", type: "multiple_choice", prompt: "Which was ACU's original historical name?", choices: ["Southwestern Bible Institute", "Phoenix State College", "Mesa Tech", "Grand Canyon Seminary"], answer: "Southwestern Bible Institute", points: 20 },
+  { id: "acu-3-5", level: 3, category: "test", type: "multiple_choice", prompt: "ACU aims to prepare students for Christian _______.", choices: ["Ministry and service", "Warfare", "Politics only", "Business only"], answer: "Ministry and service", points: 20 },
+
+  // Level 4 — Athletics & traditions
+  { id: "acu-4-1", level: 4, category: "test", type: "multiple_choice", prompt: "ACU competes in which national athletic association?", choices: ["NCAA Division I", "NCAA Division II", "NAIA", "NJCAA"], answer: "NAIA", points: 20 },
+  { id: "acu-4-2", level: 4, category: "test", type: "multiple_choice", prompt: "Which conference is ACU part of?", choices: ["Pac-12", "Big Sky", "Golden State Athletic Conference", "Mountain West"], answer: "Golden State Athletic Conference", points: 20 },
+  { id: "acu-4-3", level: 4, category: "test", type: "multiple_choice", prompt: "The Firebird mascot is most similar to which mythical creature?", choices: ["Dragon", "Phoenix", "Unicorn", "Griffin"], answer: "Phoenix", points: 20 },
+  { id: "acu-4-4", level: 4, category: "test", type: "multiple_choice", prompt: "In what year did Southwestern College officially rename itself Arizona Christian University?", choices: ["2001", "2011", "2015", "2020"], answer: "2011", points: 20 },
+  { id: "acu-4-5", level: 4, category: "test", type: "multiple_choice", prompt: "ACU offers competitive athletics for which groups of students?", choices: ["Men only", "Women only", "Both men and women", "Neither"], answer: "Both men and women", points: 20 },
+
+  // Level 5 — Recent history & identity (hardest)
+  { id: "acu-5-1", level: 5, category: "test", type: "multiple_choice", prompt: "In which decade did ACU move to its current Glendale campus?", choices: ["1990s", "2000s", "2010s", "2020s"], answer: "2010s", points: 25 },
+  { id: "acu-5-2", level: 5, category: "test", type: "multiple_choice", prompt: "ACU's mission emphasizes shaping students for which kind of leadership?", choices: ["Christian leadership", "Corporate leadership only", "Political leadership only", "Military leadership"], answer: "Christian leadership", points: 25 },
+  { id: "acu-5-3", level: 5, category: "test", type: "multiple_choice", prompt: "Who is the central figure of the Christian faith that ACU teaches about?", choices: ["Moses", "Muhammad", "Jesus Christ", "Buddha"], answer: "Jesus Christ", points: 25 },
+  { id: "acu-5-4", level: 5, category: "test", type: "multiple_choice", prompt: "ACU is regionally accredited by which accrediting body?", choices: ["Higher Learning Commission (HLC)", "ABET", "WASC", "SACS"], answer: "Higher Learning Commission (HLC)", points: 25 },
+  { id: "acu-5-5", level: 5, category: "test", type: "multiple_choice", prompt: "ACU's identity is shaped most by a commitment to what?", choices: ["A biblical worldview", "A political platform", "A scientific method only", "A fine-arts focus"], answer: "A biblical worldview", points: 25 },
+];
+
+// Combined default pool used by the admin seeder. When floating Bibles are
+// picked up the game filters this by category "bible"; pen + paper pickups
+// filter by category "test".
 export const DEFAULT_QUESTIONS: Question[] = [
-  // Beach (Level 1) - Creation / early Genesis
-  { id: "seed-1-1", level: 1, type: "multiple_choice", prompt: "Who created the world?", choices: ["God", "Moses", "David", "Noah"], answer: "God", points: 20 },
-  { id: "seed-1-2", level: 1, type: "multiple_choice", prompt: "How many days did it take God to create the world?", choices: ["3", "5", "6", "10"], answer: "6", points: 20 },
-  { id: "seed-1-3", level: 1, type: "multiple_choice", prompt: "Who were the first man and woman?", choices: ["Cain and Abel", "Adam and Eve", "Abraham and Sarah", "Isaac and Rebekah"], answer: "Adam and Eve", points: 20 },
-  { id: "seed-1-4", level: 1, type: "multiple_choice", prompt: "What did God create on the first day?", choices: ["Animals", "Stars", "Light", "Plants"], answer: "Light", points: 20 },
-  { id: "seed-1-5", level: 1, type: "multiple_choice", prompt: "On which day did God rest?", choices: ["1st", "3rd", "6th", "7th"], answer: "7th", points: 20 },
-
-  // Desert (Level 2) - Exodus / Moses
-  { id: "seed-2-1", level: 2, type: "multiple_choice", prompt: "Who led the Israelites out of Egypt?", choices: ["Moses", "Joshua", "Aaron", "Samuel"], answer: "Moses", points: 20 },
-  { id: "seed-2-2", level: 2, type: "multiple_choice", prompt: "How many commandments did God give Moses?", choices: ["5", "7", "10", "12"], answer: "10", points: 20 },
-  { id: "seed-2-3", level: 2, type: "multiple_choice", prompt: "What sea did Moses part?", choices: ["Dead Sea", "Red Sea", "Sea of Galilee", "Mediterranean"], answer: "Red Sea", points: 20 },
-  { id: "seed-2-4", level: 2, type: "multiple_choice", prompt: "What food fell from heaven in the desert?", choices: ["Bread", "Manna", "Rice", "Fish"], answer: "Manna", points: 20 },
-  { id: "seed-2-5", level: 2, type: "multiple_choice", prompt: "Where did God appear to Moses?", choices: ["Burning bush", "Cloud", "River", "Cave"], answer: "Burning bush", points: 20 },
-
-  // Forest (Level 3) - Noah / Garden
-  { id: "seed-3-1", level: 3, type: "multiple_choice", prompt: "Who built the ark?", choices: ["Noah", "Abraham", "Jonah", "Paul"], answer: "Noah", points: 20 },
-  { id: "seed-3-2", level: 3, type: "multiple_choice", prompt: "How many of each animal went on the ark?", choices: ["One", "Two", "Three", "Four"], answer: "Two", points: 20 },
-  { id: "seed-3-3", level: 3, type: "multiple_choice", prompt: "How many days did it rain?", choices: ["7", "20", "40", "100"], answer: "40", points: 20 },
-  { id: "seed-3-4", level: 3, type: "multiple_choice", prompt: "What sign did God give after the flood?", choices: ["Star", "Rainbow", "Dove", "Cloud"], answer: "Rainbow", points: 20 },
-  { id: "seed-3-5", level: 3, type: "multiple_choice", prompt: "What was the garden called where Adam lived?", choices: ["Garden of Eden", "Garden of Olives", "Garden of Gethsemane", "Garden of Paradise"], answer: "Garden of Eden", points: 20 },
-
-  // Arctic (Level 4) - David, Daniel, Jonah
-  { id: "seed-4-1", level: 4, type: "multiple_choice", prompt: "Who killed the giant Goliath?", choices: ["Saul", "David", "Samson", "Gideon"], answer: "David", points: 20 },
-  { id: "seed-4-2", level: 4, type: "multiple_choice", prompt: "Who was thrown into the lions' den?", choices: ["Daniel", "Jonah", "Joseph", "Peter"], answer: "Daniel", points: 20 },
-  { id: "seed-4-3", level: 4, type: "multiple_choice", prompt: "Who was swallowed by a big fish?", choices: ["Peter", "Paul", "Jonah", "John"], answer: "Jonah", points: 20 },
-  { id: "seed-4-4", level: 4, type: "multiple_choice", prompt: "Who had a coat of many colors?", choices: ["Joseph", "Jacob", "Isaac", "Samuel"], answer: "Joseph", points: 20 },
-  { id: "seed-4-5", level: 4, type: "multiple_choice", prompt: "Who was the strongest man in the Bible?", choices: ["Samson", "Saul", "Solomon", "Stephen"], answer: "Samson", points: 20 },
-
-  // Castle (Level 5) - Jesus / New Testament
-  { id: "seed-5-1", level: 5, type: "multiple_choice", prompt: "In what town was Jesus born?", choices: ["Nazareth", "Bethlehem", "Jerusalem", "Jericho"], answer: "Bethlehem", points: 25 },
-  { id: "seed-5-2", level: 5, type: "multiple_choice", prompt: "Who was Jesus' mother?", choices: ["Martha", "Mary", "Ruth", "Esther"], answer: "Mary", points: 25 },
-  { id: "seed-5-3", level: 5, type: "multiple_choice", prompt: "How many disciples did Jesus have?", choices: ["7", "10", "12", "15"], answer: "12", points: 25 },
-  { id: "seed-5-4", level: 5, type: "multiple_choice", prompt: "What did Jesus do on the third day?", choices: ["Healed a leper", "Rose from the dead", "Fed the 5000", "Walked on water"], answer: "Rose from the dead", points: 25 },
-  { id: "seed-5-5", level: 5, type: "multiple_choice", prompt: "What is the first book of the New Testament?", choices: ["Mark", "Luke", "Matthew", "John"], answer: "Matthew", points: 25 },
+  ...BIBLE_QUESTIONS,
+  ...ACU_TEST_QUESTIONS,
 ];
