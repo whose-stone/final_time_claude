@@ -328,6 +328,7 @@ function QuestionsPanel({
   const [filterLevel, setFilterLevel] = useState<LevelId | 0>(0);
   const [filterCategory, setFilterCategory] = useState<QuestionCategory | "all">("all");
   const [reseeding, setReseeding] = useState(false);
+  const [importing, setImporting] = useState(false);
 
   function blank(): Question {
     return {
@@ -416,6 +417,12 @@ function QuestionsPanel({
           + Add Question
         </button>
         <button
+          onClick={() => setImporting(true)}
+          title="Bulk-import Bible and/or Test questions from JSON"
+        >
+          📋 Import JSON
+        </button>
+        <button
           className="btn-navy"
           onClick={handleReseed}
           disabled={reseeding}
@@ -469,7 +476,323 @@ function QuestionsPanel({
           onSave={handleSave}
         />
       )}
+
+      {importing && (
+        <ImportJsonDialog
+          defaultPoints={defaultPoints}
+          defaultCategory={filterCategory === "all" ? "test" : filterCategory}
+          defaultLevel={filterLevel || 1}
+          onCancel={() => setImporting(false)}
+          onImported={async () => {
+            setImporting(false);
+            await onReload();
+          }}
+        />
+      )}
     </>
+  );
+}
+
+// ---------------- Import JSON ----------------
+
+// The importer accepts two roughly-equivalent schemas so pasting in
+// question banks from various sources works without reformatting:
+//
+//   { level, category, prompt, choices, answer, points, id }   ← native
+//   { difficulty, question, options, answer, category, points, id }
+//
+// Any of those aliases are normalised into the native shape before
+// validation. Missing category defaults to whatever category the admin
+// is currently filtering on (or "test" when viewing All).
+interface ImportRow {
+  level?: number;
+  difficulty?: number;
+  category?: string;
+  prompt?: string;
+  question?: string;
+  choices?: unknown;
+  options?: unknown;
+  answer?: string;
+  points?: number;
+  id?: string;
+  type?: string;
+}
+
+function ImportJsonDialog({
+  defaultPoints,
+  defaultCategory,
+  defaultLevel,
+  onCancel,
+  onImported,
+}: {
+  defaultPoints: number;
+  defaultCategory: QuestionCategory;
+  defaultLevel: LevelId;
+  onCancel: () => void;
+  onImported: () => Promise<void>;
+}) {
+  const [text, setText] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  const [progress, setProgress] = useState<{ done: number; total: number } | null>(null);
+  const [saving, setSaving] = useState(false);
+
+  const sample = JSON.stringify(
+    [
+      {
+        difficulty: defaultLevel,
+        question: "Who built the ark?",
+        options: ["Moses", "Noah", "Abraham", "David"],
+        answer: "Noah",
+      },
+      {
+        difficulty: defaultLevel,
+        question: "Who was swallowed by a great fish?",
+        options: ["Jonah", "Daniel", "Peter", "Elijah"],
+        answer: "Jonah",
+      },
+    ],
+    null,
+    2,
+  );
+
+  async function handleFileChoose(e: React.ChangeEvent<HTMLInputElement>) {
+    const f = e.target.files?.[0];
+    if (!f) return;
+    try {
+      const content = await f.text();
+      setText(content);
+      setError(null);
+    } catch {
+      setError("Could not read the selected file.");
+    }
+  }
+
+  async function handleImport() {
+    setError(null);
+    setProgress(null);
+
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(text);
+    } catch (err) {
+      setError(
+        `JSON parse error: ${err instanceof Error ? err.message : String(err)}`,
+      );
+      return;
+    }
+
+    // Accept either an array or an object with {questions: [...]}.
+    let rows: ImportRow[];
+    if (Array.isArray(parsed)) {
+      rows = parsed as ImportRow[];
+    } else if (parsed && typeof parsed === "object" && Array.isArray((parsed as { questions?: unknown }).questions)) {
+      rows = (parsed as { questions: ImportRow[] }).questions;
+    } else {
+      setError(
+        'Expected a JSON array of questions, or an object like {"questions": [...]}.',
+      );
+      return;
+    }
+
+    if (rows.length === 0) {
+      setError("The JSON had no question entries.");
+      return;
+    }
+
+    // Validate each row first so we either import everything or nothing.
+    const cleaned: Question[] = [];
+    for (let i = 0; i < rows.length; i++) {
+      const r = rows[i];
+      const idx = i + 1;
+      if (!r || typeof r !== "object") {
+        setError(`Entry #${idx} is not an object.`);
+        return;
+      }
+      // Accept aliases: `difficulty` -> level, `question` -> prompt,
+      // `options` -> choices.
+      const rawLevel = r.level ?? r.difficulty;
+      const level = Number(rawLevel);
+      if (!Number.isInteger(level) || level < 1 || level > 5) {
+        setError(
+          `Entry #${idx}: "level" (or "difficulty") must be an integer 1..5.`,
+        );
+        return;
+      }
+      const category = r.category ?? defaultCategory;
+      if (category !== "bible" && category !== "test") {
+        setError(`Entry #${idx}: "category" must be "bible" or "test".`);
+        return;
+      }
+      const prompt = r.prompt ?? r.question;
+      if (typeof prompt !== "string" || prompt.trim() === "") {
+        setError(`Entry #${idx}: "prompt" (or "question") is required.`);
+        return;
+      }
+      const rawChoices = r.choices ?? r.options;
+      if (!Array.isArray(rawChoices)) {
+        setError(
+          `Entry #${idx}: "choices" (or "options") must be an array of strings.`,
+        );
+        return;
+      }
+      const choices = (rawChoices as unknown[])
+        .map((c) => (typeof c === "string" ? c.trim() : ""))
+        .filter((c) => c !== "");
+      if (choices.length < 2) {
+        setError(`Entry #${idx}: need at least 2 non-empty choices.`);
+        return;
+      }
+      if (typeof r.answer !== "string" || r.answer.trim() === "") {
+        setError(`Entry #${idx}: "answer" is required.`);
+        return;
+      }
+      if (!choices.includes(r.answer.trim())) {
+        setError(
+          `Entry #${idx}: "answer" (${r.answer}) must match one of the choices exactly.`,
+        );
+        return;
+      }
+      const points =
+        typeof r.points === "number" && r.points >= 0 && r.points <= 1000
+          ? Math.floor(r.points)
+          : defaultPoints;
+      const id =
+        typeof r.id === "string" && r.id.trim() !== ""
+          ? r.id.trim()
+          : `q-${Date.now()}-${i}-${Math.floor(Math.random() * 10000)}`;
+      cleaned.push({
+        id,
+        level: level as LevelId,
+        category: category as QuestionCategory,
+        type: "multiple_choice",
+        prompt: prompt.trim(),
+        choices,
+        answer: r.answer.trim(),
+        points,
+      });
+    }
+
+    // All valid — write sequentially so any RTDB rule rejection surfaces
+    // with the failing entry's index.
+    setSaving(true);
+    try {
+      for (let i = 0; i < cleaned.length; i++) {
+        setProgress({ done: i, total: cleaned.length });
+        await saveQuestion(cleaned[i]);
+      }
+      setProgress({ done: cleaned.length, total: cleaned.length });
+      await onImported();
+    } catch (err) {
+      setError(`Save failed: ${err instanceof Error ? err.message : String(err)}`);
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <div style={overlay}>
+      <div style={{ ...panel, maxWidth: 720 }}>
+        <h2 className="title" style={{ fontSize: 18 }}>IMPORT QUESTIONS FROM JSON</h2>
+        <p style={{ fontSize: 10, lineHeight: 1.6, color: "#333" }}>
+          Paste or upload a JSON array of Bible and/or Test questions. Each
+          entry needs: <code>difficulty</code> / <code>level</code> (1-5),{" "}
+          <code>question</code> / <code>prompt</code>, <code>options</code>{" "}
+          / <code>choices</code> (typically 4 strings), and{" "}
+          <code>answer</code> (must match one of the options exactly).
+        </p>
+        <p style={{ fontSize: 10, lineHeight: 1.6, color: "#333" }}>
+          <code>category</code> (<code>&quot;bible&quot;</code> or{" "}
+          <code>&quot;test&quot;</code>) is optional — if omitted it
+          defaults to the panel&apos;s current Category filter (currently{" "}
+          <strong>{defaultCategory}</strong>). <code>points</code> and{" "}
+          <code>id</code> are also optional.
+        </p>
+
+        <div style={{ marginBottom: 10 }}>
+          <input
+            type="file"
+            accept="application/json,.json"
+            onChange={handleFileChoose}
+            style={{ fontSize: 10 }}
+          />
+        </div>
+
+        <textarea
+          value={text}
+          onChange={(e) => setText(e.target.value)}
+          placeholder={sample}
+          rows={14}
+          style={{
+            width: "100%",
+            fontFamily: 'ui-monospace, "Courier New", monospace',
+            fontSize: 11,
+            lineHeight: 1.4,
+          }}
+          spellCheck={false}
+        />
+
+        <div className="btn-row" style={{ marginTop: 8 }}>
+          <button
+            type="button"
+            onClick={() => setText(sample)}
+            title="Load a small example you can edit"
+          >
+            Use Sample
+          </button>
+          <button
+            type="button"
+            onClick={() => setText("")}
+            disabled={!text}
+          >
+            Clear
+          </button>
+        </div>
+
+        {error && (
+          <div
+            style={{
+              marginTop: 12,
+              padding: 10,
+              background: "#fde2e2",
+              border: "2px solid #a52020",
+              fontSize: 10,
+              lineHeight: 1.5,
+              whiteSpace: "pre-wrap",
+            }}
+          >
+            {error}
+          </div>
+        )}
+        {progress && !error && (
+          <div
+            style={{
+              marginTop: 12,
+              padding: 10,
+              background: progress.done === progress.total ? "#dcefe0" : "#fef3c7",
+              border: `2px solid ${progress.done === progress.total ? "#2a7a43" : "#a88120"}`,
+              fontSize: 10,
+            }}
+          >
+            {progress.done === progress.total
+              ? `✓ Imported ${progress.total} question${progress.total === 1 ? "" : "s"}.`
+              : `Saving ${progress.done} / ${progress.total}...`}
+          </div>
+        )}
+
+        <div className="btn-row" style={{ marginTop: 16 }}>
+          <button
+            className="btn-red"
+            onClick={handleImport}
+            disabled={saving || !text.trim()}
+          >
+            {saving ? "Importing..." : "Import"}
+          </button>
+          <button onClick={onCancel} disabled={saving}>
+            {progress?.done === progress?.total && progress ? "Close" : "Cancel"}
+          </button>
+        </div>
+      </div>
+    </div>
   );
 }
 
