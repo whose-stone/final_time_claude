@@ -37,9 +37,13 @@ export default function MobileControls({ game }: Props) {
         alignItems: "center",
         userSelect: "none",
         WebkitUserSelect: "none",
+        // Prevent iOS/Android long-press from opening the native callout
+        // (share / copy / "save image") menu on the controller chassis.
+        WebkitTouchCallout: "none",
         touchAction: "none",
       }}
       onTouchStart={(e) => e.preventDefault()}
+      onContextMenu={(e) => e.preventDefault()}
     >
       {/* D-pad — left side */}
       <div style={{ display: "flex", flexDirection: "column", alignItems: "center" }}>
@@ -76,9 +80,11 @@ function DpadBtn({
       onTouchStart={(e) => { e.preventDefault(); onDown(); }}
       onTouchEnd={(e) => { e.preventDefault(); onUp(); }}
       onTouchCancel={onUp}
+      onContextMenu={(e) => e.preventDefault()}
       onMouseDown={onDown}
       onMouseUp={onUp}
       onMouseLeave={onUp}
+      draggable={false}
       style={{
         width: 46,
         height: 46,
@@ -94,6 +100,13 @@ function DpadBtn({
         padding: 0,
         cursor: "pointer",
         WebkitTapHighlightColor: "transparent",
+        // Long-press on iOS Safari / Android Chrome would otherwise
+        // open the native share / "save image" callout on the D-pad
+        // arrow glyph. Disable selection + the callout explicitly.
+        WebkitTouchCallout: "none",
+        userSelect: "none",
+        WebkitUserSelect: "none",
+        touchAction: "none",
       }}
     >
       {arrow}
@@ -118,9 +131,11 @@ function ABBtn({
         onTouchStart={(e) => { e.preventDefault(); onDown(); }}
         onTouchEnd={(e) => { e.preventDefault(); onUp(); }}
         onTouchCancel={onUp}
+        onContextMenu={(e) => e.preventDefault()}
         onMouseDown={onDown}
         onMouseUp={onUp}
         onMouseLeave={onUp}
+        draggable={false}
         style={{
           width: 64,
           height: 64,
@@ -138,6 +153,10 @@ function ABBtn({
           padding: 0,
           cursor: "pointer",
           WebkitTapHighlightColor: "transparent",
+          WebkitTouchCallout: "none",
+          userSelect: "none",
+          WebkitUserSelect: "none",
+          touchAction: "none",
         }}
       >
         {label}
