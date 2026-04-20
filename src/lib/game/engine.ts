@@ -289,12 +289,18 @@ export class Game {
         p.pos.y = pk.pos.y + pk.h;
         p.vel.y = 1;
         if (!pk.used) {
+          // Fire the trivia event BEFORE spawning the stone-shatter
+          // particles — otherwise the 18 new particles get drawn for a
+          // frame (with the render pass stuck on the last un-paused
+          // state) and the Bible question appears to lag behind the
+          // block break. Pen pickups pause+fire immediately, so match
+          // that ordering here.
           pk.used = true;
           pk.alive = false; // block shatters — no gray remnant
           pk.hitTicks = 0;
-          this.spawnBlockDebris(pk);
           this.paused = true;
           this.onEvent({ type: "bible_collected" });
+          this.spawnBlockDebris(pk);
         }
       } else if (p.vel.y > 0 && pk.alive) {
         // Land on top — only if the block hasn't shattered yet.
