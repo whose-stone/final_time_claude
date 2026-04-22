@@ -89,8 +89,50 @@ export interface PlayerState {
   checkpointQuestionIndex: number; // last question answered per level
   checkpointLevel: LevelId;
   levelResults: LevelResult[];
+  // Quiz IDs the admin has assigned to this player. Empty or missing means
+  // the student currently has no quizzes available at their start screen.
+  assignedQuizIds?: string[];
+  // Per-quiz attempt history keyed by quiz id. Letter-grade calculation and
+  // the admin CSV export both read from this structure; free-play runs of
+  // the adventure (no quizId) do NOT write here.
+  quizAttempts?: Record<string, QuizAttempt[]>;
   createdAt: number;
   updatedAt: number;
+}
+
+// A quiz is a teacher-authored overlay on top of one adventure level: when a
+// student launches the quiz, the pen-and-paper pickups draw from the quiz's
+// embedded `questions` list instead of the global /questions pool. Bible
+// trivia pickups still float around during the run for points, but Bible
+// answers never affect the quiz's correct/incorrect count or letter grade.
+export interface Quiz {
+  id: string;
+  name: string;
+  level: LevelId;
+  // How many times a player may attempt this quiz. 0 or missing = unlimited.
+  maxAttempts: number;
+  // Unix epoch ms. 0 or missing = no due date.
+  dueDate: number;
+  // If true, attempts are still allowed after `dueDate` (flagged `isLate`).
+  // If false, the start screen disables the quiz once past due.
+  allowLate: boolean;
+  questions: Question[];
+  createdAt: number;
+  updatedAt: number;
+}
+
+export interface QuizAttempt {
+  quizId: string;
+  startedAt: number;
+  completedAt: number;
+  score: number;
+  correct: number;
+  incorrect: number;
+  gargoylesDefeated: number;
+  timeSeconds: number;
+  // true when the student submitted after the quiz's dueDate (only possible
+  // if allowLate was true).
+  isLate: boolean;
 }
 
 export function letterGrade(percent: number): "A" | "B" | "C" | "D" | "F" {

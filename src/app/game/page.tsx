@@ -3,8 +3,22 @@
 import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useAuth } from "@/components/AuthProvider";
-import { appendLevelResult, loadGameConfig, loadQuestions, updatePlayer } from "@/lib/db";
-import { Character, DEFAULT_CONFIG, GameConfig, LevelId, Question } from "@/lib/types";
+import {
+  appendLevelResult,
+  loadGameConfig,
+  loadQuestions,
+  loadQuiz,
+  recordQuizAttempt,
+  updatePlayer,
+} from "@/lib/db";
+import {
+  Character,
+  DEFAULT_CONFIG,
+  GameConfig,
+  LevelId,
+  Question,
+  Quiz,
+} from "@/lib/types";
 import { Game } from "@/lib/game/engine";
 import { GameEvent, LevelStats } from "@/lib/game/types";
 import GameCanvas from "@/components/GameCanvas";
@@ -50,9 +64,12 @@ function GamePageInner() {
     const raw = searchParams?.get("char");
     return raw === "boy" || raw === "girl" ? raw : null;
   })();
+  const quizIdParam = searchParams?.get("quizId") || null;
 
   const [config, setConfig] = useState<GameConfig>(DEFAULT_CONFIG);
   const [allQuestions, setAllQuestions] = useState<Question[]>([]);
+  const [activeQuiz, setActiveQuiz] = useState<Quiz | null>(null);
+  const [attemptStartedAt, setAttemptStartedAt] = useState<number>(Date.now());
   const [currentLevel, setCurrentLevel] = useState<LevelId>(1);
   const [gameKey, setGameKey] = useState(0); // forces Game recreation on replay
   const [ready, setReady] = useState(false);
@@ -85,38 +102,54 @@ function GamePageInner() {
     }
   }, [user, player, loading, router, isPlaytest, playtestChar]);
 
-  // Load config + questions
+  // Load config + questions. If the URL carries a quizId, also pull that
+  // quiz so its embedded questions can override pen pickups for this run.
   useEffect(() => {
     if (!user) return;
     (async () => {
-      const [cfg, qs] = await Promise.all([loadGameConfig(), loadQuestions()]);
+      const [cfg, qs, quiz] = await Promise.all([
+        loadGameConfig(),
+        loadQuestions(),
+        quizIdParam ? loadQuiz(quizIdParam) : Promise.resolve(null),
+      ]);
       setConfig(cfg);
       setAllQuestions(qs);
+      setActiveQuiz(quiz);
+      setAttemptStartedAt(Date.now());
       setReady(true);
     })();
-  }, [user]);
+  }, [user, quizIdParam]);
 
   // Initialize starting level. In admin playtest mode the query param wins
-  // so the admin lands exactly on the level they picked.
+  // so the admin lands exactly on the level they picked. A quiz locks the
+  // level to whatever the quiz was authored for.
   useEffect(() => {
     if (!ready) return;
+    if (activeQuiz) {
+      setCurrentLevel(activeQuiz.level);
+      return;
+    }
     if (isPlaytest && playtestLevel) {
       setCurrentLevel(playtestLevel);
       return;
     }
     if (!player) return;
     setCurrentLevel(player.checkpointLevel || player.currentLevel || 1);
-  }, [player, ready, isPlaytest, playtestLevel]);
+  }, [player, ready, isPlaytest, playtestLevel, activeQuiz]);
 
   const levelCfg = config.levels[currentLevel];
-  // Pen+paper pickups draw from "test" (graded) questions; falls back to
-  // any level questions if an installation's data predates categories.
+  // Pen+paper pickups draw from the active quiz's embedded question list if
+  // one is loaded (quiz-driven run); otherwise they fall back to the
+  // global "test" pool for free-play practice.
   const levelQuestions = useMemo(() => {
+    if (activeQuiz) {
+      return (activeQuiz.questions || []).slice(0, levelCfg.questionCount);
+    }
     const atLevel = allQuestions.filter((q) => q.level === currentLevel);
     const tests = atLevel.filter((q) => (q.category ?? "bible") === "test");
     const pool = tests.length > 0 ? tests : atLevel;
     return pool.slice(0, levelCfg.questionCount);
-  }, [allQuestions, currentLevel, levelCfg.questionCount]);
+  }, [allQuestions, currentLevel, levelCfg.questionCount, activeQuiz]);
   // Floating Bible pickups always ask "bible"-category trivia.
   const bibleQuestions = useMemo(() => {
     const atLevel = allQuestions.filter((q) => q.level === currentLevel);
@@ -254,6 +287,25 @@ function GamePageInner() {
       timeSeconds: stats.timeSeconds,
       completedAt: Date.now(),
     });
+    // If this run was attached to an assigned quiz, record the attempt so
+    // the admin gradebook and the student's attempts-remaining counter
+    // pick it up. Free-play runs (no quizId in the URL) only write the
+    // levelResults entry above.
+    if (activeQuiz) {
+      const completedAt = Date.now();
+      const isLate = activeQuiz.dueDate > 0 && completedAt > activeQuiz.dueDate;
+      await recordQuizAttempt(player.uid, {
+        quizId: activeQuiz.id,
+        startedAt: attemptStartedAt,
+        completedAt,
+        score: stats.score,
+        correct: stats.correct,
+        incorrect: stats.incorrect,
+        gargoylesDefeated: stats.gargoylesDefeated,
+        timeSeconds: stats.timeSeconds,
+        isLate,
+      });
+    }
     await refreshPlayer();
   }
 
@@ -261,8 +313,13 @@ function GamePageInner() {
     const g = gameRef.current;
     if (!g || !triviaQuestion) return;
     if (triviaMode === "bible") {
-      // Power-up: +3 prayers when correct, nothing on wrong
-      if (correct) g.grantPrayers(3);
+      // Power-up: +3 prayers and the question's points when correct.
+      // Bible answers NEVER touch correct/incorrect so they don't affect
+      // the quiz letter grade — only score.
+      if (correct) {
+        g.grantPrayers(3);
+        g.grantPoints(triviaQuestion.points || 0);
+      }
     } else {
       // Level question: score points, advance checkpoint
       g.recordAnswer(correct, triviaQuestion.points || levelCfg.pointsPerQuestion);
@@ -284,21 +341,32 @@ function GamePageInner() {
       router.replace("/admin");
       return;
     }
+    // A quiz is a single-level run — after it ends, the student returns to
+    // their quiz list regardless of level number.
+    if (activeQuiz) {
+      router.replace("/start");
+      return;
+    }
     if (currentLevel < 5) {
       setCurrentLevel((l) => (Math.min(5, l + 1) as LevelId));
       setGameKey((k) => k + 1);
     } else {
-      router.replace("/");
+      router.replace("/start");
     }
   }
 
   function onReplay() {
+    setAttemptStartedAt(Date.now());
     setGameKey((k) => k + 1);
   }
 
   function onExit() {
     if (isPlaytest) {
       router.replace("/admin");
+      return;
+    }
+    if (activeQuiz) {
+      router.replace("/start");
       return;
     }
     logout().finally(() => router.replace("/"));
@@ -323,6 +391,38 @@ function GamePageInner() {
 
   return (
     <main style={{ padding: 16, minHeight: "100vh" }}>
+      {activeQuiz && !isPlaytest && (
+        <div
+          style={{
+            maxWidth: 960,
+            margin: "0 auto 10px",
+            background: "#ba0c2f",
+            color: "#fff",
+            border: "3px solid #111",
+            borderRadius: 6,
+            padding: "10px 16px",
+            display: "flex",
+            justifyContent: "space-between",
+            alignItems: "center",
+            gap: 12,
+            fontSize: 14,
+            letterSpacing: 1,
+          }}
+        >
+          <span>
+            📝 QUIZ: {activeQuiz.name}
+            {activeQuiz.dueDate > 0 && Date.now() > activeQuiz.dueDate
+              ? " · LATE"
+              : ""}
+          </span>
+          <button
+            style={{ fontSize: 13, padding: "6px 12px" }}
+            onClick={() => router.replace("/start")}
+          >
+            ← Back to Quizzes
+          </button>
+        </div>
+      )}
       {isPlaytest && (
         <div
           style={{

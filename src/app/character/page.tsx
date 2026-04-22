@@ -23,7 +23,7 @@ export default function CharacterPage() {
     setSaving(true);
     await savePlayer({ ...player, character: c });
     await refreshPlayer();
-    router.replace("/game");
+    router.replace("/start");
   }
 
   return (

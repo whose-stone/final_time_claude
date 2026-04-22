@@ -17,7 +17,7 @@ export default function LoginPage() {
     if (loading || !user || !player) return;
     if (isAdmin) router.replace("/admin");
     else if (!player.character) router.replace("/character");
-    else router.replace("/game");
+    else router.replace("/start");
   }, [user, player, isAdmin, loading, router]);
 
   async function onSubmit(e: React.FormEvent) {

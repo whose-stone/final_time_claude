@@ -214,6 +214,13 @@ export class Game {
     this.player.prayers = Math.min(9, this.player.prayers + n);
   }
 
+  // Award points without touching correct/incorrect counters. Bible-trivia
+  // answers use this so they contribute to the player's score but NOT to
+  // the quiz's letter-grade calculation (which is correct/attempts).
+  grantPoints(n: number) {
+    if (n > 0) this.stats.score += n;
+  }
+
   recordAnswer(correct: boolean, points: number) {
     if (correct) {
       this.stats.correct++;
