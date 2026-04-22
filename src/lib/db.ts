@@ -1,6 +1,6 @@
 "use client";
 
-import { ref, get, set, update, remove, child } from "firebase/database";
+import { ref, get, set, update, remove } from "firebase/database";
 import { getFirebase } from "./firebase";
 import {
   DEFAULT_CONFIG,
@@ -11,6 +11,8 @@ import {
   PlayerState,
   Question,
   QuestionCategory,
+  Quiz,
+  QuizAttempt,
 } from "./types";
 
 // Back-compat helper: questions written before `category` existed were all
@@ -201,10 +203,24 @@ export async function resetPlayer(uid: string): Promise<void> {
     checkpointLevel: 1,
     checkpointQuestionIndex: 0,
     levelResults: [],
+    assignedQuizIds: [],
+    quizAttempts: {},
     character: undefined,
     updatedAt: Date.now(),
   };
   await savePlayer(reset);
+}
+
+/**
+ * Hard-delete a player's RTDB record. Their Firebase Auth account is left
+ * intact (admins still need to clean that up via the Firebase console) —
+ * this is intentional so that accidentally-deleted students can re-sign-in
+ * and a fresh PlayerState is auto-created by AuthProvider.
+ */
+export async function deletePlayer(uid: string): Promise<void> {
+  const { db } = getFirebase();
+  if (!db) return;
+  await remove(ref(db, `players/${uid}`));
 }
 
 export async function appendLevelResult(
@@ -225,4 +241,132 @@ export async function appendLevelResult(
     updatedAt: Date.now(),
   };
   await savePlayer(updated);
+}
+
+// ------- Quizzes -------
+
+export async function listQuizzes(): Promise<Quiz[]> {
+  const { db } = getFirebase();
+  if (!db) return [];
+  const snap = await get(ref(db, "quizzes"));
+  if (!snap.exists()) return [];
+  const val = snap.val() as Record<string, Quiz>;
+  return Object.keys(val).map((k) => ({
+    ...val[k],
+    id: k,
+    questions: val[k].questions || [],
+  }));
+}
+
+export async function loadQuiz(id: string): Promise<Quiz | null> {
+  const { db } = getFirebase();
+  if (!db) return null;
+  const snap = await get(ref(db, `quizzes/${id}`));
+  if (!snap.exists()) return null;
+  const val = snap.val() as Quiz;
+  return { ...val, id, questions: val.questions || [] };
+}
+
+export async function saveQuiz(q: Quiz): Promise<void> {
+  const { db } = getFirebase();
+  if (!db) return;
+  const toSave: Quiz = {
+    ...q,
+    updatedAt: Date.now(),
+    createdAt: q.createdAt || Date.now(),
+    questions: (q.questions || []).map((x) => ({
+      ...x,
+      category: x.category ?? "test",
+    })),
+  };
+  const clean = JSON.parse(JSON.stringify(toSave));
+  await set(ref(db, `quizzes/${q.id}`), clean);
+}
+
+export async function deleteQuiz(id: string): Promise<void> {
+  const { db } = getFirebase();
+  if (!db) return;
+  await remove(ref(db, `quizzes/${id}`));
+  // Also strip this quiz from every player's assignedQuizIds so the start
+  // screen never tries to render a quiz that no longer exists.
+  const players = await listPlayers();
+  await Promise.all(
+    players
+      .filter((p) => (p.assignedQuizIds || []).includes(id))
+      .map((p) =>
+        updatePlayer(p.uid, {
+          assignedQuizIds: (p.assignedQuizIds || []).filter((x) => x !== id),
+        }),
+      ),
+  );
+}
+
+/**
+ * Assign a quiz to a set of players by uid. Idempotent: uids that already
+ * have the quiz are left unchanged. Writes one update per affected player.
+ */
+export async function assignQuizToPlayers(
+  quizId: string,
+  uids: string[],
+): Promise<void> {
+  await Promise.all(
+    uids.map(async (uid) => {
+      const p = await loadPlayer(uid);
+      if (!p) return;
+      const current = p.assignedQuizIds || [];
+      if (current.includes(quizId)) return;
+      await updatePlayer(uid, { assignedQuizIds: [...current, quizId] });
+    }),
+  );
+}
+
+export async function unassignQuizFromPlayers(
+  quizId: string,
+  uids: string[],
+): Promise<void> {
+  await Promise.all(
+    uids.map(async (uid) => {
+      const p = await loadPlayer(uid);
+      if (!p) return;
+      const current = p.assignedQuizIds || [];
+      if (!current.includes(quizId)) return;
+      await updatePlayer(uid, {
+        assignedQuizIds: current.filter((x) => x !== quizId),
+      });
+    }),
+  );
+}
+
+export async function recordQuizAttempt(
+  uid: string,
+  attempt: QuizAttempt,
+): Promise<void> {
+  const p = await loadPlayer(uid);
+  if (!p) return;
+  const all = { ...(p.quizAttempts || {}) };
+  const list = all[attempt.quizId] ? [...all[attempt.quizId]] : [];
+  list.push(attempt);
+  all[attempt.quizId] = list;
+  await updatePlayer(uid, { quizAttempts: all });
+}
+
+/**
+ * Admin override: replace the `score` (and its `correct` count) on a
+ * specific attempt. `attemptIndex` is the position in the per-quiz history
+ * array as surfaced by the admin UI.
+ */
+export async function updateQuizAttemptScore(
+  uid: string,
+  quizId: string,
+  attemptIndex: number,
+  newScore: number,
+): Promise<void> {
+  const p = await loadPlayer(uid);
+  if (!p) return;
+  const all = { ...(p.quizAttempts || {}) };
+  const list = all[quizId] ? [...all[quizId]] : [];
+  if (attemptIndex < 0 || attemptIndex >= list.length) return;
+  list[attemptIndex] = { ...list[attemptIndex], score: newScore };
+  all[quizId] = list;
+  await updatePlayer(uid, { quizAttempts: all });
 }

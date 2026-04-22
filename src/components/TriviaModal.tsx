@@ -65,17 +65,17 @@ export default function TriviaModal({ question, headerLabel, onResolve }: Props)
       <div style={panel}>
         <div
           style={{
-            fontSize: 13,
+            fontSize: 15,
             color: "#ffd447",
             background: "#0b1b3a",
-            padding: 12,
+            padding: 14,
             borderRadius: 6,
             letterSpacing: 1,
           }}
         >
           {headerLabel} · {question.points} PTS
         </div>
-        <h2 style={{ fontSize: 22, lineHeight: 1.4, margin: "22px 0 18px", color: "#ba0c2f" }}>
+        <h2 style={{ fontSize: 24, lineHeight: 1.4, margin: "24px 0 20px", color: "#ba0c2f" }}>
           {question.prompt}
         </h2>
 
@@ -96,9 +96,9 @@ export default function TriviaModal({ question, headerLabel, onResolve }: Props)
                 disabled={resolvedCorrect !== null}
                 style={{
                   textAlign: "left",
-                  fontSize: 16,
+                  fontSize: 18,
                   lineHeight: 1.4,
-                  padding: "14px 16px",
+                  padding: "16px 18px",
                   display: "flex",
                   alignItems: "center",
                   gap: 14,
@@ -117,15 +117,15 @@ export default function TriviaModal({ question, headerLabel, onResolve }: Props)
                     display: "inline-flex",
                     alignItems: "center",
                     justifyContent: "center",
-                    width: 28,
-                    height: 28,
+                    width: 32,
+                    height: 32,
                     flexShrink: 0,
                     borderRadius: 4,
                     border: "2px solid #111",
                     background:
                       showCorrect || showWrong ? "rgba(255,255,255,0.25)" : "#fff",
                     color: showCorrect || showWrong ? "#fff" : "#0b1b3a",
-                    fontSize: 13,
+                    fontSize: 15,
                     fontWeight: "bold",
                   }}
                 >
@@ -139,8 +139,8 @@ export default function TriviaModal({ question, headerLabel, onResolve }: Props)
 
         <div
           style={{
-            marginTop: 12,
-            fontSize: 10,
+            marginTop: 14,
+            fontSize: 12,
             color: "#666",
             textAlign: "right",
             letterSpacing: 1,
@@ -157,7 +157,7 @@ export default function TriviaModal({ question, headerLabel, onResolve }: Props)
               background: resolvedCorrect ? "#dcefe0" : "#fde2e2",
               border: `3px solid ${resolvedCorrect ? "#2a7a43" : "#a52020"}`,
               borderRadius: 4,
-              fontSize: 14,
+              fontSize: 16,
               lineHeight: 1.4,
             }}
           >

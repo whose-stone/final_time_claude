@@ -27,33 +27,33 @@ export default function LevelResults(p: Props) {
       <div style={panel}>
         {p.gameOver ? (
           <>
-            <h1 style={{ color: "#ba0c2f", fontSize: 22 }}>GAME OVER</h1>
-            <p style={{ fontSize: 10 }}>You ran out of lives! Don&rsquo;t give up — try again.</p>
+            <h1 style={{ color: "#ba0c2f", fontSize: 28 }}>GAME OVER</h1>
+            <p style={{ fontSize: 14, lineHeight: 1.6 }}>You ran out of lives! Don&rsquo;t give up — try again.</p>
           </>
         ) : p.isBoss ? (
           <>
-            <h1 style={{ color: "#ba0c2f", fontSize: 22 }}>TEACHER DEFEATED!</h1>
-            <p style={{ fontSize: 10 }}>
+            <h1 style={{ color: "#ba0c2f", fontSize: 28 }}>TEACHER DEFEATED!</h1>
+            <p style={{ fontSize: 14, lineHeight: 1.6 }}>
               You vanquished the final homework-slinging teacher. He&rsquo;s sipping
               Diet Mountain Dew in peace. Congratulations, Firebird!
             </p>
           </>
         ) : (
           <>
-            <h1 style={{ color: "#ba0c2f", fontSize: 22 }}>
+            <h1 style={{ color: "#ba0c2f", fontSize: 28 }}>
               LEVEL {p.level} COMPLETE
             </h1>
-            <p style={{ fontSize: 10 }}>{LEVEL_NAMES[p.level]} cleared!</p>
+            <p style={{ fontSize: 14, lineHeight: 1.6 }}>{LEVEL_NAMES[p.level]} cleared!</p>
           </>
         )}
 
         <div
           style={{
-            marginTop: 16,
+            marginTop: 18,
             display: "grid",
             gridTemplateColumns: "1fr 1fr",
-            gap: 10,
-            fontSize: 11,
+            gap: 12,
+            fontSize: 14,
           }}
         >
           <Stat label="Grade" value={grade} />
@@ -92,11 +92,11 @@ function Stat({ label, value }: { label: string; value: string }) {
         background: "#faf3e0",
         border: "2px solid #111",
         borderRadius: 6,
-        padding: "10px 12px",
+        padding: "12px 14px",
       }}
     >
-      <div style={{ fontSize: 8, color: "#666" }}>{label.toUpperCase()}</div>
-      <div>{value}</div>
+      <div style={{ fontSize: 11, color: "#666", letterSpacing: 1 }}>{label.toUpperCase()}</div>
+      <div style={{ fontSize: 16, marginTop: 4 }}>{value}</div>
     </div>
   );
 }

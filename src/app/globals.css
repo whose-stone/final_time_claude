@@ -18,6 +18,8 @@ body {
   background: var(--acu-cream);
   color: var(--ink);
   font-family: "Press Start 2P", ui-monospace, "Courier New", monospace;
+  font-size: 14px;
+  line-height: 1.5;
   -webkit-font-smoothing: antialiased;
 }
 
@@ -27,11 +29,12 @@ a {
 
 button {
   font-family: inherit;
+  font-size: 14px;
   cursor: pointer;
   border: 3px solid var(--ink);
   background: var(--acu-gold);
   color: var(--ink);
-  padding: 10px 16px;
+  padding: 12px 20px;
   border-radius: 6px;
   font-weight: bold;
   box-shadow: 3px 3px 0 var(--ink);
@@ -57,7 +60,8 @@ input,
 select,
 textarea {
   font-family: inherit;
-  padding: 8px 10px;
+  font-size: 14px;
+  padding: 10px 12px;
   border: 2px solid var(--ink);
   border-radius: 4px;
   background: white;
@@ -82,29 +86,30 @@ textarea {
 }
 
 .title {
-  font-size: 28px;
+  font-size: 34px;
   color: var(--acu-red);
-  margin: 0 0 6px 0;
+  margin: 0 0 8px 0;
   letter-spacing: 1px;
 }
 
 .subtitle {
-  font-size: 10px;
+  font-size: 13px;
   color: var(--acu-navy);
   margin: 0 0 20px 0;
+  line-height: 1.5;
 }
 
 .form-row {
   display: flex;
   flex-direction: column;
-  gap: 6px;
-  margin-bottom: 14px;
-  font-size: 10px;
+  gap: 8px;
+  margin-bottom: 16px;
+  font-size: 13px;
 }
 
 .error {
   color: var(--acu-red);
-  font-size: 10px;
+  font-size: 13px;
   margin: 8px 0;
 }
 
@@ -142,10 +147,13 @@ table td {
 table th {
   background: #0b1b3a;
   color: #ffd447;
-  font-size: 9px;
+  font-size: 12px;
+  padding: 10px 10px;
 }
 
 table td {
-  font-size: 10px;
+  font-size: 13px;
+  line-height: 1.45;
   background: #fff;
+  padding: 10px 10px;
 }

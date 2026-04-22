@@ -4,15 +4,21 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/components/AuthProvider";
 import {
+  assignQuizToPlayers,
+  deletePlayer,
   deleteQuestion,
+  deleteQuiz,
   listPlayers,
+  listQuizzes,
   loadGameConfig,
   loadQuestions,
   reseedQuestions,
   resetPlayer,
   saveGameConfig,
   saveQuestion,
+  saveQuiz,
   seedQuestionsIfEmpty,
+  unassignQuizFromPlayers,
   updatePlayer,
 } from "@/lib/db";
 import {
@@ -25,10 +31,11 @@ import {
   PlayerState,
   Question,
   QuestionCategory,
+  Quiz,
 } from "@/lib/types";
 import { downloadPlayerPdf } from "@/lib/pdf";
 
-type Tab = "players" | "questions" | "config" | "playtest";
+type Tab = "players" | "quizzes" | "questions" | "config" | "playtest";
 
 export default function AdminPage() {
   const { user, isAdmin, loading, logout } = useAuth();
@@ -36,6 +43,7 @@ export default function AdminPage() {
   const [tab, setTab] = useState<Tab>("players");
   const [players, setPlayers] = useState<PlayerState[]>([]);
   const [questions, setQuestions] = useState<Question[]>([]);
+  const [quizzes, setQuizzes] = useState<Quiz[]>([]);
   const [config, setConfig] = useState<GameConfig>(DEFAULT_CONFIG);
   const [loadingData, setLoadingData] = useState(true);
 
@@ -49,14 +57,16 @@ export default function AdminPage() {
     setLoadingData(true);
     try {
       await seedQuestionsIfEmpty();
-      const [ps, qs, cfg] = await Promise.all([
+      const [ps, qs, cfg, qz] = await Promise.all([
         listPlayers(),
         loadQuestions(),
         loadGameConfig(),
+        listQuizzes(),
       ]);
       setPlayers(ps);
       setQuestions(qs);
       setConfig(cfg);
+      setQuizzes(qz);
     } finally {
       setLoadingData(false);
     }
@@ -103,6 +113,12 @@ export default function AdminPage() {
           Players ({players.length})
         </button>
         <button
+          className={tab === "quizzes" ? "btn-red" : ""}
+          onClick={() => setTab("quizzes")}
+        >
+          Quizzes ({quizzes.length})
+        </button>
+        <button
           className={tab === "questions" ? "btn-red" : ""}
           onClick={() => setTab("questions")}
         >
@@ -125,7 +141,19 @@ export default function AdminPage() {
       {loadingData && <p>Loading data...</p>}
 
       {tab === "players" && (
-        <PlayersPanel players={players} onReload={refreshAll} />
+        <PlayersPanel
+          players={players}
+          quizzes={quizzes}
+          onReload={refreshAll}
+        />
+      )}
+      {tab === "quizzes" && (
+        <QuizzesPanel
+          quizzes={quizzes}
+          players={players}
+          onReload={refreshAll}
+          defaultPoints={config.defaultPointsPerQuestion}
+        />
       )}
       {tab === "questions" && (
         <QuestionsPanel
@@ -171,13 +199,13 @@ function PlaytestPanel() {
       }}
     >
       <h3 style={{ marginTop: 0 }}>Admin Playtest</h3>
-      <p style={{ fontSize: 11, lineHeight: 1.5, color: "#333" }}>
+      <p style={{ fontSize: 14, lineHeight: 1.6, color: "#333" }}>
         Jump directly into any level to test gameplay, boss fight, and
         question ordering. Admin playtest sessions bypass checkpoint
         saves so you can replay freely without overwriting student
         progress.
       </p>
-      <div style={{ display: "grid", gap: 10, fontSize: 10, marginTop: 12 }}>
+      <div style={{ display: "grid", gap: 10, fontSize: 14, marginTop: 12 }}>
         <Row label="Level">
           <select
             value={level}
@@ -211,19 +239,68 @@ function PlaytestPanel() {
 }
 
 // ---------------- Players ----------------
+// Letter grade is derived from the player's quiz attempts ONLY — Bible
+// trivia contributes to score but not to grade. We take each quiz's best
+// attempt and average correct/attempts across all of them.
+function playerQuizGrade(
+  p: PlayerState,
+): { grade: string; pct: number; scoreTotal: number; attemptCount: number } {
+  const attemptsByQuiz = p.quizAttempts || {};
+  let correct = 0;
+  let attempts = 0;
+  let scoreTotal = 0;
+  let attemptCount = 0;
+  for (const list of Object.values(attemptsByQuiz)) {
+    if (!list || list.length === 0) continue;
+    attemptCount += list.length;
+    const best = list.reduce((a, b) => (b.score > a.score ? b : a));
+    correct += best.correct;
+    attempts += best.correct + best.incorrect;
+    scoreTotal += best.score;
+  }
+  const pct = attempts > 0 ? (correct / attempts) * 100 : 0;
+  const grade = attempts > 0 ? letterGrade(pct) : "—";
+  return { grade, pct, scoreTotal, attemptCount };
+}
+
 function PlayersPanel({
   players,
+  quizzes,
   onReload,
 }: {
   players: PlayerState[];
+  quizzes: Quiz[];
   onReload: () => Promise<void>;
 }) {
   const [editingScore, setEditingScore] = useState<{ uid: string; score: string } | null>(null);
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [action, setAction] = useState<"assign" | "reset" | "delete">("assign");
+  const [applying, setApplying] = useState(false);
+  const [assignDialogOpen, setAssignDialogOpen] = useState(false);
 
-  async function handleReset(uid: string) {
-    if (!confirm("Reset this player's game state? All progress will be cleared.")) return;
-    await resetPlayer(uid);
-    await onReload();
+  // When the roster changes (e.g. after a delete), prune any selected uids
+  // that no longer exist so the "N selected" counter can't drift.
+  useEffect(() => {
+    setSelected((prev) => {
+      const alive = new Set(players.map((p) => p.uid));
+      const next = new Set<string>();
+      for (const uid of prev) if (alive.has(uid)) next.add(uid);
+      return next;
+    });
+  }, [players]);
+
+  function toggle(uid: string) {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(uid)) next.delete(uid);
+      else next.add(uid);
+      return next;
+    });
+  }
+
+  function toggleAll() {
+    if (selected.size === players.length) setSelected(new Set());
+    else setSelected(new Set(players.map((p) => p.uid)));
   }
 
   async function handleSaveScore(p: PlayerState) {
@@ -235,81 +312,1174 @@ function PlayersPanel({
     await onReload();
   }
 
+  async function apply() {
+    if (selected.size === 0) {
+      alert("Check at least one player first.");
+      return;
+    }
+    const uids = [...selected];
+    if (action === "reset") {
+      if (
+        !confirm(
+          `Reset ${uids.length} player${uids.length === 1 ? "" : "s"}? This clears quiz assignments, all quiz attempts, score, checkpoint, and character selection.`,
+        )
+      )
+        return;
+      setApplying(true);
+      try {
+        for (const uid of uids) await resetPlayer(uid);
+        setSelected(new Set());
+        await onReload();
+      } finally {
+        setApplying(false);
+      }
+    } else if (action === "delete") {
+      if (
+        !confirm(
+          `Delete ${uids.length} player${uids.length === 1 ? "" : "s"}? The RTDB records are removed. Firebase Auth accounts are left intact — students can sign back in and a fresh blank profile will be created.`,
+        )
+      )
+        return;
+      setApplying(true);
+      try {
+        for (const uid of uids) await deletePlayer(uid);
+        setSelected(new Set());
+        await onReload();
+      } finally {
+        setApplying(false);
+      }
+    } else if (action === "assign") {
+      if (quizzes.length === 0) {
+        alert("No quizzes exist yet. Create one on the Quizzes tab first.");
+        return;
+      }
+      setAssignDialogOpen(true);
+    }
+  }
+
   if (players.length === 0) {
-    return <p style={{ fontSize: 10 }}>No players yet. Students will appear here after they sign up and begin playing.</p>;
+    return <p style={{ fontSize: 14 }}>No players yet. Students will appear here after they sign up and begin playing.</p>;
+  }
+
+  const quizById: Record<string, Quiz> = Object.fromEntries(
+    quizzes.map((q) => [q.id, q]),
+  );
+  const allChecked = selected.size === players.length;
+  const someChecked = selected.size > 0 && !allChecked;
+
+  return (
+    <>
+      <div
+        className="btn-row"
+        style={{
+          marginBottom: 12,
+          alignItems: "center",
+          gap: 12,
+          flexWrap: "wrap",
+        }}
+      >
+        <strong style={{ fontSize: 14 }}>
+          {selected.size} selected
+        </strong>
+        <label style={{ fontSize: 14 }}>Action:</label>
+        <select
+          value={action}
+          onChange={(e) => setAction(e.target.value as "assign" | "reset" | "delete")}
+        >
+          <option value="assign">Assign Quiz</option>
+          <option value="reset">Reset</option>
+          <option value="delete">Delete</option>
+        </select>
+        <button
+          className="btn-red"
+          onClick={apply}
+          disabled={applying || selected.size === 0}
+        >
+          {applying ? "Applying..." : "Apply"}
+        </button>
+        <span style={{ flex: 1 }} />
+        <button onClick={() => downloadQuizScoresCsv(players, quizzes)}>
+          ⬇ Download Quiz Scores CSV
+        </button>
+      </div>
+
+      <div style={{ overflowX: "auto" }}>
+        <table style={tableStyle}>
+          <thead>
+            <tr>
+              <th style={{ width: 34 }}>
+                <input
+                  type="checkbox"
+                  checked={allChecked}
+                  ref={(el) => {
+                    if (el) el.indeterminate = someChecked;
+                  }}
+                  onChange={toggleAll}
+                  aria-label="Select all"
+                />
+              </th>
+              <th>Email</th>
+              <th>Character</th>
+              <th>Assigned Quizzes</th>
+              <th>Quiz Attempts</th>
+              <th>Score</th>
+              <th>Grade</th>
+              <th>Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            {players
+              .slice()
+              .sort((a, b) => b.totalScore - a.totalScore)
+              .map((p) => {
+                const g = playerQuizGrade(p);
+                const assigned = p.assignedQuizIds || [];
+                const isChecked = selected.has(p.uid);
+                return (
+                  <tr
+                    key={p.uid}
+                    style={isChecked ? { background: "#fff3cc" } : undefined}
+                  >
+                    <td>
+                      <input
+                        type="checkbox"
+                        checked={isChecked}
+                        onChange={() => toggle(p.uid)}
+                        aria-label={`Select ${p.email}`}
+                      />
+                    </td>
+                    <td>{p.email}</td>
+                    <td>{p.character ?? "—"}</td>
+                    <td style={{ maxWidth: 260 }}>
+                      {assigned.length === 0 ? (
+                        <span style={{ color: "#888" }}>— none —</span>
+                      ) : (
+                        assigned
+                          .map((qid) => quizById[qid]?.name ?? `(deleted ${qid})`)
+                          .join(", ")
+                      )}
+                    </td>
+                    <td>{g.attemptCount}</td>
+                    <td>
+                      {editingScore?.uid === p.uid ? (
+                        <>
+                          <input
+                            style={{ width: 80 }}
+                            value={editingScore.score}
+                            onChange={(e) => setEditingScore({ ...editingScore, score: e.target.value })}
+                          />
+                          <button style={{ marginLeft: 6 }} onClick={() => handleSaveScore(p)}>
+                            Save
+                          </button>
+                        </>
+                      ) : (
+                        <span
+                          style={{ cursor: "pointer", textDecoration: "underline" }}
+                          onClick={() => setEditingScore({ uid: p.uid, score: String(p.totalScore) })}
+                        >
+                          {p.totalScore}
+                        </span>
+                      )}
+                    </td>
+                    <td>{g.grade}</td>
+                    <td>
+                      <div className="btn-row">
+                        <button onClick={() => downloadPlayerPdf(p)}>PDF</button>
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })}
+          </tbody>
+        </table>
+      </div>
+
+      {assignDialogOpen && (
+        <PickQuizForBulkAssignDialog
+          quizzes={quizzes}
+          selectedCount={selected.size}
+          onCancel={() => setAssignDialogOpen(false)}
+          onAssign={async (quizId) => {
+            setApplying(true);
+            try {
+              await assignQuizToPlayers(quizId, [...selected]);
+              setAssignDialogOpen(false);
+              setSelected(new Set());
+              await onReload();
+            } finally {
+              setApplying(false);
+            }
+          }}
+        />
+      )}
+    </>
+  );
+}
+
+// Emit a CSV that contains one row per (player × quiz-attempt). Admins use
+// this as the gradebook export — the columns are stable so it can be
+// pasted into LMS imports. Bible trivia isn't attributable to a specific
+// quiz so it never appears here; its score contribution already lives in
+// the per-attempt `score` column.
+function downloadQuizScoresCsv(players: PlayerState[], quizzes: Quiz[]) {
+  const quizById: Record<string, Quiz> = Object.fromEntries(
+    quizzes.map((q) => [q.id, q]),
+  );
+  const header = [
+    "email",
+    "quiz_id",
+    "quiz_name",
+    "level",
+    "attempt_index",
+    "attempt_number",
+    "score",
+    "correct",
+    "incorrect",
+    "accuracy_pct",
+    "letter_grade",
+    "is_late",
+    "completed_at_iso",
+  ];
+  const rows: string[][] = [];
+  for (const p of players) {
+    const attempts = p.quizAttempts || {};
+    for (const [quizId, list] of Object.entries(attempts)) {
+      const quizName = quizById[quizId]?.name ?? "(deleted quiz)";
+      const level = String(quizById[quizId]?.level ?? "");
+      list.forEach((a, i) => {
+        const attempted = a.correct + a.incorrect;
+        const pct = attempted > 0 ? (a.correct / attempted) * 100 : 0;
+        rows.push([
+          p.email,
+          quizId,
+          quizName,
+          level,
+          String(i),
+          String(i + 1),
+          String(a.score),
+          String(a.correct),
+          String(a.incorrect),
+          pct.toFixed(1),
+          attempted > 0 ? letterGrade(pct) : "",
+          a.isLate ? "true" : "false",
+          new Date(a.completedAt).toISOString(),
+        ]);
+      });
+    }
+  }
+  const csv = [header, ...rows]
+    .map((r) => r.map(csvEscape).join(","))
+    .join("\n");
+  const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = `quiz-scores-${new Date().toISOString().slice(0, 10)}.csv`;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+}
+
+function csvEscape(s: string): string {
+  if (/[",\n]/.test(s)) return `"${s.replace(/"/g, '""')}"`;
+  return s;
+}
+
+// Picker shown after the admin checks one or more players in the Players
+// table, selects "Assign Quiz" as the bulk action, and clicks Apply. The
+// admin picks a single quiz from the library and it's assigned to every
+// checked player in one batch.
+function PickQuizForBulkAssignDialog({
+  quizzes,
+  selectedCount,
+  onCancel,
+  onAssign,
+}: {
+  quizzes: Quiz[];
+  selectedCount: number;
+  onCancel: () => void;
+  onAssign: (quizId: string) => Promise<void>;
+}) {
+  const [pickedId, setPickedId] = useState<string>("");
+  const [assigning, setAssigning] = useState(false);
+  const [filter, setFilter] = useState("");
+
+  const visible = quizzes.filter((q) =>
+    q.name.toLowerCase().includes(filter.toLowerCase()),
+  );
+
+  async function handleAssign() {
+    if (!pickedId) return;
+    setAssigning(true);
+    try {
+      await onAssign(pickedId);
+    } finally {
+      setAssigning(false);
+    }
   }
 
   return (
-    <div style={{ overflowX: "auto" }}>
-      <table style={tableStyle}>
-        <thead>
-          <tr>
-            <th>Email</th>
-            <th>Character</th>
-            <th>Level</th>
-            <th>Checkpoint</th>
-            <th>Score</th>
-            <th>Grade</th>
-            <th>Actions</th>
-          </tr>
-        </thead>
-        <tbody>
-          {players
-            .slice()
-            .sort((a, b) => b.totalScore - a.totalScore)
-            .map((p) => {
-              const totals = (p.levelResults || []).reduce(
-                (acc, r) => ({
-                  correct: acc.correct + r.correct,
-                  attempts: acc.attempts + r.correct + r.incorrect,
-                }),
-                { correct: 0, attempts: 0 },
-              );
-              const pct = totals.attempts > 0 ? (totals.correct / totals.attempts) * 100 : 0;
-              const grade = totals.attempts > 0 ? letterGrade(pct) : "—";
-              return (
-                <tr key={p.uid}>
-                  <td>{p.email}</td>
-                  <td>{p.character ?? "—"}</td>
-                  <td>{LEVEL_NAMES[p.currentLevel]} (#{p.currentLevel})</td>
+    <div style={overlay}>
+      <div style={{ ...panel, maxWidth: 560 }}>
+        <h2 className="title" style={{ fontSize: 22 }}>
+          PICK A QUIZ TO ASSIGN
+        </h2>
+        <p style={{ fontSize: 13, color: "#555" }}>
+          Assigning to <strong>{selectedCount}</strong>{" "}
+          selected player{selectedCount === 1 ? "" : "s"}.
+        </p>
+        <input
+          placeholder="Filter quizzes..."
+          value={filter}
+          onChange={(e) => setFilter(e.target.value)}
+          style={{ width: "100%", marginBottom: 10 }}
+        />
+        <div style={{ maxHeight: 320, overflowY: "auto", display: "grid", gap: 6 }}>
+          {visible.length === 0 && (
+            <p style={{ fontSize: 13, color: "#777" }}>No quizzes match.</p>
+          )}
+          {visible.map((q) => (
+            <label
+              key={q.id}
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: 10,
+                fontSize: 13,
+                padding: "8px 10px",
+                border: "2px solid #111",
+                borderRadius: 6,
+                background: pickedId === q.id ? "#fff3cc" : "#fff",
+                cursor: "pointer",
+              }}
+            >
+              <input
+                type="radio"
+                name="pick-quiz"
+                checked={pickedId === q.id}
+                onChange={() => setPickedId(q.id)}
+              />
+              <span style={{ flex: 1 }}>
+                {q.name} · L{q.level} · {q.questions?.length ?? 0} Qs
+                {q.dueDate > 0 && (
+                  <span style={{ color: "#555" }}>
+                    {" "}
+                    · due {new Date(q.dueDate).toLocaleDateString()}
+                  </span>
+                )}
+              </span>
+            </label>
+          ))}
+        </div>
+        <div className="btn-row" style={{ marginTop: 18 }}>
+          <button
+            className="btn-red"
+            onClick={handleAssign}
+            disabled={assigning || !pickedId}
+          >
+            {assigning ? "Assigning..." : "Assign"}
+          </button>
+          <button onClick={onCancel} disabled={assigning}>
+            Cancel
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ---------------- Quizzes ----------------
+
+function blankQuiz(defaultPoints: number): Quiz {
+  return {
+    id: `quiz-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
+    name: "New Quiz",
+    level: 1,
+    maxAttempts: 1,
+    dueDate: 0,
+    allowLate: false,
+    questions: [
+      {
+        id: `q-${Date.now()}-1`,
+        level: 1,
+        category: "test",
+        type: "multiple_choice",
+        prompt: "",
+        choices: ["", "", "", ""],
+        answer: "",
+        points: defaultPoints,
+      },
+    ],
+    createdAt: 0,
+    updatedAt: 0,
+  };
+}
+
+function QuizzesPanel({
+  quizzes,
+  players,
+  onReload,
+  defaultPoints,
+}: {
+  quizzes: Quiz[];
+  players: PlayerState[];
+  onReload: () => Promise<void>;
+  defaultPoints: number;
+}) {
+  const [editing, setEditing] = useState<Quiz | null>(null);
+  const [assigning, setAssigning] = useState<Quiz | null>(null);
+  const [importing, setImporting] = useState(false);
+
+  async function handleDelete(q: Quiz) {
+    if (
+      !confirm(
+        `Delete quiz "${q.name}"? It will be removed from every player's assigned-quiz list. Past attempt records remain in player data but become orphaned.`,
+      )
+    )
+      return;
+    await deleteQuiz(q.id);
+    await onReload();
+  }
+
+  async function handleSave(q: Quiz) {
+    const questions = (q.questions || []).map((qq, i) => ({
+      ...qq,
+      id: qq.id || `${q.id}-q-${i}`,
+      category: "test" as QuestionCategory,
+      choices: (qq.choices || []).map((c) => c.trim()).filter(Boolean),
+    }));
+    const badLevel = questions.findIndex(
+      (qq) => !Number.isInteger(qq.level) || qq.level < 1 || qq.level > 5,
+    );
+    if (badLevel >= 0) {
+      alert(`Question ${badLevel + 1}: level must be set to 1–5.`);
+      return;
+    }
+    const bad = questions.findIndex(
+      (qq) => !qq.prompt.trim() || (qq.choices || []).length < 2 || !(qq.choices || []).includes(qq.answer),
+    );
+    if (bad >= 0) {
+      alert(
+        `Question ${bad + 1} is incomplete — needs a prompt, at least 2 non-empty choices, and an answer that matches one of them.`,
+      );
+      return;
+    }
+    const cleaned: Quiz = {
+      ...q,
+      name: q.name.trim() || "Untitled Quiz",
+      // The quiz-level stage (which adventure backdrop a student lands
+      // on) is derived from the first question's level. Authors reorder
+      // questions to pick a stage.
+      level: questions[0].level,
+      questions,
+    };
+    await saveQuiz(cleaned);
+    setEditing(null);
+    await onReload();
+  }
+
+  const assignedCount = (quizId: string) =>
+    players.filter((p) => (p.assignedQuizIds || []).includes(quizId)).length;
+
+  return (
+    <>
+      <div className="btn-row" style={{ marginBottom: 12 }}>
+        <button
+          className="btn-red"
+          onClick={() => setEditing(blankQuiz(defaultPoints))}
+        >
+          + New Quiz
+        </button>
+        <button onClick={() => setImporting(true)}>📋 Import JSON</button>
+      </div>
+
+      {quizzes.length === 0 && (
+        <p style={{ fontSize: 14 }}>
+          No quizzes yet. Create one manually or import a JSON file with embedded questions.
+        </p>
+      )}
+
+      {quizzes.length > 0 && (
+        <div style={{ overflowX: "auto" }}>
+          <table style={tableStyle}>
+            <thead>
+              <tr>
+                <th>Name</th>
+                <th>Level</th>
+                <th>Qs</th>
+                <th>Max Attempts</th>
+                <th>Due</th>
+                <th>Late?</th>
+                <th>Assigned</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              {quizzes.map((q) => (
+                <tr key={q.id}>
+                  <td>{q.name}</td>
                   <td>
-                    L{p.checkpointLevel} · Q{p.checkpointQuestionIndex}
+                    {q.level}. {LEVEL_NAMES[q.level]}
                   </td>
+                  <td>{q.questions?.length ?? 0}</td>
+                  <td>{q.maxAttempts > 0 ? q.maxAttempts : "∞"}</td>
                   <td>
-                    {editingScore?.uid === p.uid ? (
-                      <>
-                        <input
-                          style={{ width: 80 }}
-                          value={editingScore.score}
-                          onChange={(e) => setEditingScore({ ...editingScore, score: e.target.value })}
-                        />
-                        <button style={{ marginLeft: 6 }} onClick={() => handleSaveScore(p)}>
-                          Save
-                        </button>
-                      </>
-                    ) : (
-                      <span
-                        style={{ cursor: "pointer", textDecoration: "underline" }}
-                        onClick={() => setEditingScore({ uid: p.uid, score: String(p.totalScore) })}
-                      >
-                        {p.totalScore}
-                      </span>
-                    )}
+                    {q.dueDate > 0
+                      ? new Date(q.dueDate).toLocaleDateString()
+                      : "—"}
                   </td>
-                  <td>{grade}</td>
+                  <td>{q.allowLate ? "yes" : "no"}</td>
+                  <td>{assignedCount(q.id)}</td>
                   <td>
                     <div className="btn-row">
-                      <button onClick={() => downloadPlayerPdf(p)}>PDF</button>
-                      <button className="btn-navy" onClick={() => handleReset(p.uid)}>
-                        Reset
+                      <button onClick={() => setEditing(q)}>Edit</button>
+                      <button onClick={() => setAssigning(q)}>Assign</button>
+                      <button className="btn-red" onClick={() => handleDelete(q)}>
+                        Delete
                       </button>
                     </div>
                   </td>
                 </tr>
-              );
-            })}
-        </tbody>
-      </table>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {editing && (
+        <QuizEditor
+          quiz={editing}
+          onChange={setEditing}
+          onCancel={() => setEditing(null)}
+          onSave={() => handleSave(editing)}
+          defaultPoints={defaultPoints}
+        />
+      )}
+
+      {assigning && (
+        <AssignPlayersToQuizDialog
+          quiz={assigning}
+          players={players}
+          onClose={() => setAssigning(null)}
+          onSaved={async () => {
+            setAssigning(null);
+            await onReload();
+          }}
+        />
+      )}
+
+      {importing && (
+        <QuizImportDialog
+          defaultPoints={defaultPoints}
+          onCancel={() => setImporting(false)}
+          onImported={async () => {
+            setImporting(false);
+            await onReload();
+          }}
+        />
+      )}
+    </>
+  );
+}
+
+function QuizEditor({
+  quiz,
+  onChange,
+  onCancel,
+  onSave,
+  defaultPoints,
+}: {
+  quiz: Quiz;
+  onChange: (q: Quiz) => void;
+  onCancel: () => void;
+  onSave: () => Promise<void>;
+  defaultPoints: number;
+}) {
+  const dueIso = quiz.dueDate > 0
+    ? new Date(quiz.dueDate).toISOString().slice(0, 10)
+    : "";
+
+  function addQuestion() {
+    const existing = quiz.questions || [];
+    // Default a new question's level to the previous question's level so
+    // filling out a single-level quiz doesn't require changing the level
+    // picker on every row.
+    const nextLevel: LevelId =
+      (existing[existing.length - 1]?.level as LevelId | undefined) ?? 1;
+    onChange({
+      ...quiz,
+      questions: [
+        ...existing,
+        {
+          id: `q-${Date.now()}-${existing.length}`,
+          level: nextLevel,
+          category: "test",
+          type: "multiple_choice",
+          prompt: "",
+          choices: ["", "", "", ""],
+          answer: "",
+          points: defaultPoints,
+        },
+      ],
+    });
+  }
+
+  function removeQuestion(i: number) {
+    const qs = [...(quiz.questions || [])];
+    qs.splice(i, 1);
+    onChange({ ...quiz, questions: qs });
+  }
+
+  function updateQuestion(i: number, patch: Partial<Question>) {
+    const qs = [...(quiz.questions || [])];
+    qs[i] = { ...qs[i], ...patch };
+    onChange({ ...quiz, questions: qs });
+  }
+
+  return (
+    <div style={overlay}>
+      <div style={{ ...panel, maxWidth: 720 }}>
+        <h2 className="title" style={{ fontSize: 24 }}>EDIT QUIZ</h2>
+        <div style={{ display: "grid", gap: 12, fontSize: 14 }}>
+          <Row label="Name">
+            <input
+              value={quiz.name}
+              onChange={(e) => onChange({ ...quiz, name: e.target.value })}
+            />
+          </Row>
+          <Row label="Max attempts (0 = unlimited)">
+            <input
+              type="number"
+              min={0}
+              value={quiz.maxAttempts}
+              onChange={(e) =>
+                onChange({ ...quiz, maxAttempts: parseInt(e.target.value, 10) || 0 })
+              }
+            />
+          </Row>
+          <Row label="Due date (blank = no due date)">
+            <input
+              type="date"
+              value={dueIso}
+              onChange={(e) => {
+                const v = e.target.value;
+                onChange({
+                  ...quiz,
+                  dueDate: v ? new Date(v + "T23:59:59").getTime() : 0,
+                });
+              }}
+            />
+          </Row>
+          <Row label="Allow late submissions">
+            <input
+              type="checkbox"
+              checked={quiz.allowLate}
+              onChange={(e) => onChange({ ...quiz, allowLate: e.target.checked })}
+            />
+          </Row>
+        </div>
+
+        <h3 style={{ marginTop: 22, fontSize: 18 }}>
+          Questions ({quiz.questions?.length ?? 0})
+        </h3>
+        <div style={{ display: "grid", gap: 16, marginTop: 8 }}>
+          {(quiz.questions || []).map((q, i) => (
+            <div
+              key={q.id}
+              style={{
+                border: "2px solid #111",
+                borderRadius: 6,
+                padding: 12,
+                background: "#faf3e0",
+              }}
+            >
+              <div
+                style={{
+                  display: "flex",
+                  justifyContent: "space-between",
+                  alignItems: "center",
+                  marginBottom: 8,
+                }}
+              >
+                <strong style={{ fontSize: 14 }}>Q{i + 1}</strong>
+                <button
+                  className="btn-navy"
+                  style={{ fontSize: 12, padding: "6px 10px" }}
+                  onClick={() => removeQuestion(i)}
+                >
+                  Remove
+                </button>
+              </div>
+              <Row label="Level">
+                <select
+                  value={q.level}
+                  onChange={(e) =>
+                    updateQuestion(i, {
+                      level: parseInt(e.target.value, 10) as LevelId,
+                    })
+                  }
+                >
+                  {([1, 2, 3, 4, 5] as LevelId[]).map((l) => (
+                    <option key={l} value={l}>
+                      {l}. {LEVEL_NAMES[l]}
+                    </option>
+                  ))}
+                </select>
+              </Row>
+              <Row label="Prompt">
+                <textarea
+                  rows={2}
+                  value={q.prompt}
+                  onChange={(e) => updateQuestion(i, { prompt: e.target.value })}
+                />
+              </Row>
+              {(q.choices ?? ["", "", "", ""]).map((c, ci) => (
+                <Row key={ci} label={`Choice ${ci + 1}`}>
+                  <input
+                    value={c}
+                    onChange={(e) => {
+                      const arr = [...(q.choices ?? ["", "", "", ""])];
+                      arr[ci] = e.target.value;
+                      updateQuestion(i, { choices: arr });
+                    }}
+                  />
+                </Row>
+              ))}
+              <Row label="Correct answer">
+                <select
+                  value={q.answer}
+                  onChange={(e) => updateQuestion(i, { answer: e.target.value })}
+                >
+                  <option value="">-- pick one --</option>
+                  {(q.choices ?? []).filter(Boolean).map((c) => (
+                    <option key={c} value={c}>
+                      {c}
+                    </option>
+                  ))}
+                </select>
+              </Row>
+              <Row label="Points">
+                <input
+                  type="number"
+                  value={q.points}
+                  onChange={(e) =>
+                    updateQuestion(i, { points: parseInt(e.target.value, 10) || 0 })
+                  }
+                />
+              </Row>
+            </div>
+          ))}
+        </div>
+        <div className="btn-row" style={{ marginTop: 12 }}>
+          <button onClick={addQuestion}>+ Add Question</button>
+        </div>
+
+        <div className="btn-row" style={{ marginTop: 20 }}>
+          <button className="btn-red" onClick={onSave}>
+            Save Quiz
+          </button>
+          <button onClick={onCancel}>Cancel</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function AssignPlayersToQuizDialog({
+  quiz,
+  players,
+  onClose,
+  onSaved,
+}: {
+  quiz: Quiz;
+  players: PlayerState[];
+  onClose: () => void;
+  onSaved: () => Promise<void>;
+}) {
+  const [selected, setSelected] = useState<Set<string>>(
+    new Set(
+      players.filter((p) => (p.assignedQuizIds || []).includes(quiz.id)).map((p) => p.uid),
+    ),
+  );
+  const [saving, setSaving] = useState(false);
+  const [filter, setFilter] = useState("");
+
+  function toggle(uid: string) {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(uid)) next.delete(uid);
+      else next.add(uid);
+      return next;
+    });
+  }
+
+  async function save() {
+    setSaving(true);
+    try {
+      const initial = new Set(
+        players.filter((p) => (p.assignedQuizIds || []).includes(quiz.id)).map((p) => p.uid),
+      );
+      const toAssign = [...selected].filter((u) => !initial.has(u));
+      const toUnassign = [...initial].filter((u) => !selected.has(u));
+      if (toAssign.length > 0) await assignQuizToPlayers(quiz.id, toAssign);
+      if (toUnassign.length > 0) await unassignQuizFromPlayers(quiz.id, toUnassign);
+      await onSaved();
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  const visible = players.filter((p) =>
+    p.email.toLowerCase().includes(filter.toLowerCase()),
+  );
+
+  return (
+    <div style={overlay}>
+      <div style={{ ...panel, maxWidth: 560 }}>
+        <h2 className="title" style={{ fontSize: 22 }}>
+          ASSIGN PLAYERS — {quiz.name}
+        </h2>
+        <input
+          placeholder="Filter by email..."
+          value={filter}
+          onChange={(e) => setFilter(e.target.value)}
+          style={{ width: "100%", marginBottom: 10 }}
+        />
+        <div style={{ maxHeight: 340, overflowY: "auto", display: "grid", gap: 6 }}>
+          {visible.length === 0 && (
+            <p style={{ fontSize: 13, color: "#777" }}>No players match.</p>
+          )}
+          {visible.map((p) => (
+            <label
+              key={p.uid}
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: 10,
+                fontSize: 13,
+                padding: "8px 10px",
+                border: "2px solid #111",
+                borderRadius: 6,
+                background: selected.has(p.uid) ? "#fff3cc" : "#fff",
+                cursor: "pointer",
+              }}
+            >
+              <input
+                type="checkbox"
+                checked={selected.has(p.uid)}
+                onChange={() => toggle(p.uid)}
+              />
+              <span style={{ flex: 1 }}>{p.email}</span>
+            </label>
+          ))}
+        </div>
+        <div className="btn-row" style={{ marginTop: 16 }}>
+          <button className="btn-red" onClick={save} disabled={saving}>
+            {saving ? "Saving..." : `Save (${selected.size} selected)`}
+          </button>
+          <button onClick={onClose} disabled={saving}>
+            Cancel
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// JSON shape accepted by the quiz importer:
+//   [
+//     {
+//       "name": "Week 3 Quiz",
+//       "level": 2,
+//       "maxAttempts": 2,
+//       "dueDate": "2026-05-01",   // or ms epoch
+//       "allowLate": false,
+//       "questions": [
+//         { "prompt": "...", "choices": [...], "answer": "...", "points": 10 },
+//         ...
+//       ]
+//     }
+//   ]
+// Single quiz as a bare object also accepted.
+// Level lives on each question, not on the wrapper — a quiz can mix
+// questions tagged with different levels (e.g. a cumulative review). The
+// quiz's stored `level` field, which picks the adventure stage when a
+// student launches it, is derived from the first question's level.
+interface QuizImportRow {
+  id?: string;
+  name?: string;
+  maxAttempts?: number;
+  dueDate?: number | string;
+  allowLate?: boolean;
+  questions?: Array<{
+    id?: string;
+    level?: number;
+    prompt?: string;
+    question?: string;
+    choices?: unknown;
+    options?: unknown;
+    answer?: string;
+    points?: number;
+  }>;
+}
+
+function QuizImportDialog({
+  defaultPoints,
+  onCancel,
+  onImported,
+}: {
+  defaultPoints: number;
+  onCancel: () => void;
+  onImported: () => Promise<void>;
+}) {
+  const [text, setText] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  const [progress, setProgress] = useState<{ done: number; total: number } | null>(null);
+  const [saving, setSaving] = useState(false);
+
+  const sample = JSON.stringify(
+    [
+      {
+        name: "Week 1 — Creation",
+        maxAttempts: 2,
+        dueDate: "2026-05-15",
+        allowLate: true,
+        questions: [
+          {
+            level: 1,
+            prompt: "Who created the heavens and the earth?",
+            choices: ["God", "A king", "A wizard", "Nobody"],
+            answer: "God",
+            points: 20,
+          },
+          {
+            level: 1,
+            prompt: "What was the name of the first man?",
+            choices: ["Noah", "Adam", "Moses", "David"],
+            answer: "Adam",
+            points: 20,
+          },
+        ],
+      },
+    ],
+    null,
+    2,
+  );
+
+  async function handleFileChoose(e: React.ChangeEvent<HTMLInputElement>) {
+    const f = e.target.files?.[0];
+    if (!f) return;
+    try {
+      setText(await f.text());
+      setError(null);
+    } catch {
+      setError("Could not read the selected file.");
+    }
+  }
+
+  async function handleImport() {
+    setError(null);
+    setProgress(null);
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(text);
+    } catch (err) {
+      setError(`JSON parse error: ${err instanceof Error ? err.message : String(err)}`);
+      return;
+    }
+    const rows: QuizImportRow[] = Array.isArray(parsed)
+      ? (parsed as QuizImportRow[])
+      : [parsed as QuizImportRow];
+    if (rows.length === 0) {
+      setError("No quizzes found in the JSON.");
+      return;
+    }
+
+    const cleaned: Quiz[] = [];
+    for (let i = 0; i < rows.length; i++) {
+      const r = rows[i];
+      const idx = i + 1;
+      if (!r || typeof r !== "object") {
+        setError(`Quiz #${idx} is not an object.`);
+        return;
+      }
+      const name = typeof r.name === "string" && r.name.trim() ? r.name.trim() : `Quiz ${idx}`;
+      let dueMs = 0;
+      if (typeof r.dueDate === "number") dueMs = r.dueDate;
+      else if (typeof r.dueDate === "string" && r.dueDate.trim()) {
+        const t = Date.parse(r.dueDate);
+        if (isNaN(t)) {
+          setError(`Quiz #${idx}: "dueDate" "${r.dueDate}" is not a valid date.`);
+          return;
+        }
+        dueMs = t;
+      }
+      const qs = Array.isArray(r.questions) ? r.questions : [];
+      if (qs.length === 0) {
+        setError(`Quiz #${idx}: needs at least one question.`);
+        return;
+      }
+      const questions: Question[] = [];
+      for (let j = 0; j < qs.length; j++) {
+        const q = qs[j];
+        const qi = j + 1;
+        const qLevel = Number(q.level);
+        if (!Number.isInteger(qLevel) || qLevel < 1 || qLevel > 5) {
+          setError(
+            `Quiz #${idx} Q${qi}: "level" must be an integer 1..5 on every question.`,
+          );
+          return;
+        }
+        const prompt = q.prompt ?? q.question;
+        if (typeof prompt !== "string" || !prompt.trim()) {
+          setError(`Quiz #${idx} Q${qi}: needs a prompt.`);
+          return;
+        }
+        const rawChoices = q.choices ?? q.options;
+        if (!Array.isArray(rawChoices)) {
+          setError(`Quiz #${idx} Q${qi}: "choices" must be an array.`);
+          return;
+        }
+        const choices = (rawChoices as unknown[])
+          .map((c) => (typeof c === "string" ? c.trim() : ""))
+          .filter(Boolean);
+        if (choices.length < 2) {
+          setError(`Quiz #${idx} Q${qi}: need at least 2 non-empty choices.`);
+          return;
+        }
+        if (typeof q.answer !== "string" || !choices.includes(q.answer.trim())) {
+          setError(
+            `Quiz #${idx} Q${qi}: "answer" must match one of the choices exactly.`,
+          );
+          return;
+        }
+        const points =
+          typeof q.points === "number" && q.points >= 0 ? Math.floor(q.points) : defaultPoints;
+        questions.push({
+          id: q.id?.trim() || `q-${Date.now()}-${i}-${j}-${Math.floor(Math.random() * 10000)}`,
+          level: qLevel as LevelId,
+          category: "test",
+          type: "multiple_choice",
+          prompt: prompt.trim(),
+          choices,
+          answer: q.answer.trim(),
+          points,
+        });
+      }
+      // Quiz-level stage (visual theme + gameplay config) is derived from
+      // the first question's level. Authors who want a specific stage can
+      // just order their questions accordingly.
+      const launchLevel = questions[0].level;
+      cleaned.push({
+        id: r.id?.trim() || `quiz-${Date.now()}-${i}-${Math.floor(Math.random() * 10000)}`,
+        name,
+        level: launchLevel,
+        maxAttempts: Number.isInteger(r.maxAttempts) && r.maxAttempts! >= 0 ? r.maxAttempts! : 1,
+        dueDate: dueMs,
+        allowLate: !!r.allowLate,
+        questions,
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+      });
+    }
+
+    setSaving(true);
+    try {
+      for (let i = 0; i < cleaned.length; i++) {
+        setProgress({ done: i, total: cleaned.length });
+        await saveQuiz(cleaned[i]);
+      }
+      setProgress({ done: cleaned.length, total: cleaned.length });
+      await onImported();
+    } catch (err) {
+      setError(`Save failed: ${err instanceof Error ? err.message : String(err)}`);
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <div style={overlay}>
+      <div style={{ ...panel, maxWidth: 720 }}>
+        <h2 className="title" style={{ fontSize: 24 }}>IMPORT QUIZZES</h2>
+        <p style={{ fontSize: 14, lineHeight: 1.6, color: "#333" }}>
+          Paste or upload a JSON array of quizzes with embedded questions.
+          Each quiz needs <code>name</code> and a <code>questions</code>{" "}
+          array. Every question must carry its own <code>level</code>{" "}
+          (1–5) so a quiz can mix levels for review. Optional wrapper
+          fields: <code>maxAttempts</code> (0 = unlimited),{" "}
+          <code>dueDate</code> (ISO date or ms epoch),{" "}
+          <code>allowLate</code>. The adventure stage a student lands on
+          is taken from the first question&apos;s level.
+        </p>
+        <input
+          type="file"
+          accept="application/json,.json"
+          onChange={handleFileChoose}
+          style={{ fontSize: 14, marginBottom: 10 }}
+        />
+        <textarea
+          rows={14}
+          value={text}
+          onChange={(e) => setText(e.target.value)}
+          placeholder={sample}
+          style={{
+            width: "100%",
+            fontFamily: 'ui-monospace, "Courier New", monospace',
+            fontSize: 14,
+            lineHeight: 1.5,
+          }}
+          spellCheck={false}
+        />
+        <div className="btn-row" style={{ marginTop: 8 }}>
+          <button onClick={() => setText(sample)}>Use Sample</button>
+          <button onClick={() => setText("")} disabled={!text}>
+            Clear
+          </button>
+        </div>
+        {error && (
+          <div
+            style={{
+              marginTop: 12,
+              padding: 12,
+              background: "#fde2e2",
+              border: "2px solid #a52020",
+              fontSize: 13,
+              whiteSpace: "pre-wrap",
+            }}
+          >
+            {error}
+          </div>
+        )}
+        {progress && !error && (
+          <div
+            style={{
+              marginTop: 12,
+              padding: 12,
+              background: progress.done === progress.total ? "#dcefe0" : "#fef3c7",
+              border: `2px solid ${progress.done === progress.total ? "#2a7a43" : "#a88120"}`,
+              fontSize: 13,
+            }}
+          >
+            {progress.done === progress.total
+              ? `✓ Imported ${progress.total} quiz${progress.total === 1 ? "" : "zes"}.`
+              : `Saving ${progress.done} / ${progress.total}...`}
+          </div>
+        )}
+        <div className="btn-row" style={{ marginTop: 16 }}>
+          <button
+            className="btn-red"
+            onClick={handleImport}
+            disabled={saving || !text.trim()}
+          >
+            {saving ? "Importing..." : "Import"}
+          </button>
+          <button onClick={onCancel} disabled={saving}>
+            {progress?.done === progress?.total && progress ? "Close" : "Cancel"}
+          </button>
+        </div>
+      </div>
     </div>
   );
 }
@@ -395,7 +1565,7 @@ function QuestionsPanel({
   return (
     <>
       <div className="btn-row" style={{ marginBottom: 10, alignItems: "center" }}>
-        <label style={{ fontSize: 10 }}>Level:</label>
+        <label style={{ fontSize: 14 }}>Level:</label>
         <select value={filterLevel} onChange={(e) => setFilterLevel(parseInt(e.target.value, 10) as 0 | LevelId)}>
           <option value={0}>All</option>
           {([1, 2, 3, 4, 5] as LevelId[]).map((l) => (
@@ -404,7 +1574,7 @@ function QuestionsPanel({
             </option>
           ))}
         </select>
-        <label style={{ fontSize: 10 }}>Category:</label>
+        <label style={{ fontSize: 14 }}>Category:</label>
         <select
           value={filterCategory}
           onChange={(e) => setFilterCategory(e.target.value as QuestionCategory | "all")}
@@ -692,15 +1862,15 @@ function ImportJsonDialog({
   return (
     <div style={overlay}>
       <div style={{ ...panel, maxWidth: 720 }}>
-        <h2 className="title" style={{ fontSize: 18 }}>IMPORT QUESTIONS FROM JSON</h2>
-        <p style={{ fontSize: 10, lineHeight: 1.6, color: "#333" }}>
+        <h2 className="title" style={{ fontSize: 24 }}>IMPORT QUESTIONS FROM JSON</h2>
+        <p style={{ fontSize: 14, lineHeight: 1.6, color: "#333" }}>
           Paste or upload a JSON array of Bible and/or Test questions. Each
           entry needs: <code>difficulty</code> / <code>level</code> (1-5),{" "}
           <code>question</code> / <code>prompt</code>, <code>options</code>{" "}
           / <code>choices</code> (typically 4 strings), and{" "}
           <code>answer</code> (must match one of the options exactly).
         </p>
-        <p style={{ fontSize: 10, lineHeight: 1.6, color: "#333" }}>
+        <p style={{ fontSize: 14, lineHeight: 1.6, color: "#333" }}>
           <code>category</code> (<code>&quot;bible&quot;</code> or{" "}
           <code>&quot;test&quot;</code>) is optional — if omitted it
           defaults to the panel&apos;s current Category filter (currently{" "}
@@ -713,7 +1883,7 @@ function ImportJsonDialog({
             type="file"
             accept="application/json,.json"
             onChange={handleFileChoose}
-            style={{ fontSize: 10 }}
+            style={{ fontSize: 14 }}
           />
         </div>
 
@@ -725,8 +1895,8 @@ function ImportJsonDialog({
           style={{
             width: "100%",
             fontFamily: 'ui-monospace, "Courier New", monospace',
-            fontSize: 11,
-            lineHeight: 1.4,
+            fontSize: 14,
+            lineHeight: 1.5,
           }}
           spellCheck={false}
         />
@@ -752,10 +1922,10 @@ function ImportJsonDialog({
           <div
             style={{
               marginTop: 12,
-              padding: 10,
+              padding: 12,
               background: "#fde2e2",
               border: "2px solid #a52020",
-              fontSize: 10,
+              fontSize: 13,
               lineHeight: 1.5,
               whiteSpace: "pre-wrap",
             }}
@@ -767,10 +1937,10 @@ function ImportJsonDialog({
           <div
             style={{
               marginTop: 12,
-              padding: 10,
+              padding: 12,
               background: progress.done === progress.total ? "#dcefe0" : "#fef3c7",
               border: `2px solid ${progress.done === progress.total ? "#2a7a43" : "#a88120"}`,
-              fontSize: 10,
+              fontSize: 13,
             }}
           >
             {progress.done === progress.total
@@ -810,8 +1980,8 @@ function QuestionEditor({
   return (
     <div style={overlay}>
       <div style={{ ...panel, maxWidth: 620 }}>
-        <h2 className="title" style={{ fontSize: 18 }}>EDIT QUESTION</h2>
-        <div style={{ display: "grid", gap: 10, fontSize: 10 }}>
+        <h2 className="title" style={{ fontSize: 24 }}>EDIT QUESTION</h2>
+        <div style={{ display: "grid", gap: 12, fontSize: 14 }}>
           <Row label="Level">
             <select
               value={question.level}
@@ -914,7 +2084,7 @@ function ConfigPanel({
   }
 
   return (
-    <div style={{ display: "grid", gap: 16, fontSize: 10 }}>
+    <div style={{ display: "grid", gap: 16, fontSize: 14 }}>
       <div
         style={{
           background: "#fff",
@@ -1027,10 +2197,10 @@ function Row({ label, children }: { label: string; children: React.ReactNode }) 
     <div
       style={{
         display: "grid",
-        gridTemplateColumns: "180px 1fr",
+        gridTemplateColumns: "220px 1fr",
         alignItems: "center",
-        gap: 10,
-        marginBottom: 8,
+        gap: 12,
+        marginBottom: 10,
       }}
     >
       <label>{label}</label>
@@ -1043,7 +2213,7 @@ const tableStyle: React.CSSProperties = {
   width: "100%",
   borderCollapse: "collapse",
   background: "#fff",
-  fontSize: 10,
+  fontSize: 13,
   border: "3px solid #111",
 };
 
