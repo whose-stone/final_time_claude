@@ -273,28 +273,34 @@ function PlayersPanel({
   onReload: () => Promise<void>;
 }) {
   const [editingScore, setEditingScore] = useState<{ uid: string; score: string } | null>(null);
-  const [assigningFor, setAssigningFor] = useState<PlayerState | null>(null);
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [action, setAction] = useState<"assign" | "reset" | "delete">("assign");
+  const [applying, setApplying] = useState(false);
+  const [assignDialogOpen, setAssignDialogOpen] = useState(false);
 
-  async function handleReset(uid: string) {
-    if (
-      !confirm(
-        "Reset this player? This clears quiz assignments, all quiz attempts, score, checkpoint, and character selection.",
-      )
-    )
-      return;
-    await resetPlayer(uid);
-    await onReload();
+  // When the roster changes (e.g. after a delete), prune any selected uids
+  // that no longer exist so the "N selected" counter can't drift.
+  useEffect(() => {
+    setSelected((prev) => {
+      const alive = new Set(players.map((p) => p.uid));
+      const next = new Set<string>();
+      for (const uid of prev) if (alive.has(uid)) next.add(uid);
+      return next;
+    });
+  }, [players]);
+
+  function toggle(uid: string) {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(uid)) next.delete(uid);
+      else next.add(uid);
+      return next;
+    });
   }
 
-  async function handleDelete(p: PlayerState) {
-    if (
-      !confirm(
-        `Delete ${p.email}? Their RTDB record is removed entirely. Their Firebase Auth account is NOT deleted — they can sign back in and a fresh blank profile will be created.`,
-      )
-    )
-      return;
-    await deletePlayer(p.uid);
-    await onReload();
+  function toggleAll() {
+    if (selected.size === players.length) setSelected(new Set());
+    else setSelected(new Set(players.map((p) => p.uid)));
   }
 
   async function handleSaveScore(p: PlayerState) {
@@ -306,6 +312,51 @@ function PlayersPanel({
     await onReload();
   }
 
+  async function apply() {
+    if (selected.size === 0) {
+      alert("Check at least one player first.");
+      return;
+    }
+    const uids = [...selected];
+    if (action === "reset") {
+      if (
+        !confirm(
+          `Reset ${uids.length} player${uids.length === 1 ? "" : "s"}? This clears quiz assignments, all quiz attempts, score, checkpoint, and character selection.`,
+        )
+      )
+        return;
+      setApplying(true);
+      try {
+        for (const uid of uids) await resetPlayer(uid);
+        setSelected(new Set());
+        await onReload();
+      } finally {
+        setApplying(false);
+      }
+    } else if (action === "delete") {
+      if (
+        !confirm(
+          `Delete ${uids.length} player${uids.length === 1 ? "" : "s"}? The RTDB records are removed. Firebase Auth accounts are left intact — students can sign back in and a fresh blank profile will be created.`,
+        )
+      )
+        return;
+      setApplying(true);
+      try {
+        for (const uid of uids) await deletePlayer(uid);
+        setSelected(new Set());
+        await onReload();
+      } finally {
+        setApplying(false);
+      }
+    } else if (action === "assign") {
+      if (quizzes.length === 0) {
+        alert("No quizzes exist yet. Create one on the Quizzes tab first.");
+        return;
+      }
+      setAssignDialogOpen(true);
+    }
+  }
+
   if (players.length === 0) {
     return <p style={{ fontSize: 14 }}>No players yet. Students will appear here after they sign up and begin playing.</p>;
   }
@@ -313,18 +364,60 @@ function PlayersPanel({
   const quizById: Record<string, Quiz> = Object.fromEntries(
     quizzes.map((q) => [q.id, q]),
   );
+  const allChecked = selected.size === players.length;
+  const someChecked = selected.size > 0 && !allChecked;
 
   return (
     <>
-      <div className="btn-row" style={{ marginBottom: 12 }}>
+      <div
+        className="btn-row"
+        style={{
+          marginBottom: 12,
+          alignItems: "center",
+          gap: 12,
+          flexWrap: "wrap",
+        }}
+      >
+        <strong style={{ fontSize: 14 }}>
+          {selected.size} selected
+        </strong>
+        <label style={{ fontSize: 14 }}>Action:</label>
+        <select
+          value={action}
+          onChange={(e) => setAction(e.target.value as "assign" | "reset" | "delete")}
+        >
+          <option value="assign">Assign Quiz</option>
+          <option value="reset">Reset</option>
+          <option value="delete">Delete</option>
+        </select>
+        <button
+          className="btn-red"
+          onClick={apply}
+          disabled={applying || selected.size === 0}
+        >
+          {applying ? "Applying..." : "Apply"}
+        </button>
+        <span style={{ flex: 1 }} />
         <button onClick={() => downloadQuizScoresCsv(players, quizzes)}>
           ⬇ Download Quiz Scores CSV
         </button>
       </div>
+
       <div style={{ overflowX: "auto" }}>
         <table style={tableStyle}>
           <thead>
             <tr>
+              <th style={{ width: 34 }}>
+                <input
+                  type="checkbox"
+                  checked={allChecked}
+                  ref={(el) => {
+                    if (el) el.indeterminate = someChecked;
+                  }}
+                  onChange={toggleAll}
+                  aria-label="Select all"
+                />
+              </th>
               <th>Email</th>
               <th>Character</th>
               <th>Assigned Quizzes</th>
@@ -341,8 +434,20 @@ function PlayersPanel({
               .map((p) => {
                 const g = playerQuizGrade(p);
                 const assigned = p.assignedQuizIds || [];
+                const isChecked = selected.has(p.uid);
                 return (
-                  <tr key={p.uid}>
+                  <tr
+                    key={p.uid}
+                    style={isChecked ? { background: "#fff3cc" } : undefined}
+                  >
+                    <td>
+                      <input
+                        type="checkbox"
+                        checked={isChecked}
+                        onChange={() => toggle(p.uid)}
+                        aria-label={`Select ${p.email}`}
+                      />
+                    </td>
                     <td>{p.email}</td>
                     <td>{p.character ?? "—"}</td>
                     <td style={{ maxWidth: 260 }}>
@@ -379,14 +484,7 @@ function PlayersPanel({
                     <td>{g.grade}</td>
                     <td>
                       <div className="btn-row">
-                        <button onClick={() => setAssigningFor(p)}>Assign</button>
                         <button onClick={() => downloadPlayerPdf(p)}>PDF</button>
-                        <button className="btn-navy" onClick={() => handleReset(p.uid)}>
-                          Reset
-                        </button>
-                        <button className="btn-red" onClick={() => handleDelete(p)}>
-                          Delete
-                        </button>
                       </div>
                     </td>
                   </tr>
@@ -395,14 +493,22 @@ function PlayersPanel({
           </tbody>
         </table>
       </div>
-      {assigningFor && (
-        <AssignQuizzesToPlayerDialog
-          player={assigningFor}
+
+      {assignDialogOpen && (
+        <PickQuizForBulkAssignDialog
           quizzes={quizzes}
-          onClose={() => setAssigningFor(null)}
-          onSaved={async () => {
-            setAssigningFor(null);
-            await onReload();
+          selectedCount={selected.size}
+          onCancel={() => setAssignDialogOpen(false)}
+          onAssign={async (quizId) => {
+            setApplying(true);
+            try {
+              await assignQuizToPlayers(quizId, [...selected]);
+              setAssignDialogOpen(false);
+              setSelected(new Set());
+              await onReload();
+            } finally {
+              setApplying(false);
+            }
           }}
         />
       )}
@@ -480,91 +586,101 @@ function csvEscape(s: string): string {
   return s;
 }
 
-function AssignQuizzesToPlayerDialog({
-  player,
+// Picker shown after the admin checks one or more players in the Players
+// table, selects "Assign Quiz" as the bulk action, and clicks Apply. The
+// admin picks a single quiz from the library and it's assigned to every
+// checked player in one batch.
+function PickQuizForBulkAssignDialog({
   quizzes,
-  onClose,
-  onSaved,
+  selectedCount,
+  onCancel,
+  onAssign,
 }: {
-  player: PlayerState;
   quizzes: Quiz[];
-  onClose: () => void;
-  onSaved: () => Promise<void>;
+  selectedCount: number;
+  onCancel: () => void;
+  onAssign: (quizId: string) => Promise<void>;
 }) {
-  const [selected, setSelected] = useState<Set<string>>(
-    new Set(player.assignedQuizIds || []),
+  const [pickedId, setPickedId] = useState<string>("");
+  const [assigning, setAssigning] = useState(false);
+  const [filter, setFilter] = useState("");
+
+  const visible = quizzes.filter((q) =>
+    q.name.toLowerCase().includes(filter.toLowerCase()),
   );
-  const [saving, setSaving] = useState(false);
 
-  function toggle(id: string) {
-    setSelected((prev) => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
-      return next;
-    });
-  }
-
-  async function save() {
-    setSaving(true);
+  async function handleAssign() {
+    if (!pickedId) return;
+    setAssigning(true);
     try {
-      const prev = new Set(player.assignedQuizIds || []);
-      const next = selected;
-      const toAssign = [...next].filter((id) => !prev.has(id));
-      const toUnassign = [...prev].filter((id) => !next.has(id));
-      await Promise.all([
-        ...toAssign.map((qid) => assignQuizToPlayers(qid, [player.uid])),
-        ...toUnassign.map((qid) => unassignQuizFromPlayers(qid, [player.uid])),
-      ]);
-      await onSaved();
+      await onAssign(pickedId);
     } finally {
-      setSaving(false);
+      setAssigning(false);
     }
   }
 
   return (
     <div style={overlay}>
-      <div style={{ ...panel, maxWidth: 520 }}>
-        <h2 className="title" style={{ fontSize: 22 }}>ASSIGN QUIZZES</h2>
-        <p style={{ fontSize: 13, color: "#555" }}>{player.email}</p>
-        {quizzes.length === 0 ? (
-          <p style={{ fontSize: 13 }}>
-            No quizzes exist yet. Create one on the Quizzes tab first.
-          </p>
-        ) : (
-          <div style={{ display: "grid", gap: 8, marginTop: 10 }}>
-            {quizzes.map((q) => (
-              <label
-                key={q.id}
-                style={{
-                  display: "flex",
-                  alignItems: "center",
-                  gap: 10,
-                  fontSize: 13,
-                  padding: "8px 10px",
-                  border: "2px solid #111",
-                  borderRadius: 6,
-                  background: selected.has(q.id) ? "#fff3cc" : "#fff",
-                  cursor: "pointer",
-                }}
-              >
-                <input
-                  type="checkbox"
-                  checked={selected.has(q.id)}
-                  onChange={() => toggle(q.id)}
-                />
-                <span style={{ flex: 1 }}>
-                  {q.name} · L{q.level} · {q.questions?.length ?? 0} Qs
-                </span>
-              </label>
-            ))}
-          </div>
-        )}
+      <div style={{ ...panel, maxWidth: 560 }}>
+        <h2 className="title" style={{ fontSize: 22 }}>
+          PICK A QUIZ TO ASSIGN
+        </h2>
+        <p style={{ fontSize: 13, color: "#555" }}>
+          Assigning to <strong>{selectedCount}</strong>{" "}
+          selected player{selectedCount === 1 ? "" : "s"}.
+        </p>
+        <input
+          placeholder="Filter quizzes..."
+          value={filter}
+          onChange={(e) => setFilter(e.target.value)}
+          style={{ width: "100%", marginBottom: 10 }}
+        />
+        <div style={{ maxHeight: 320, overflowY: "auto", display: "grid", gap: 6 }}>
+          {visible.length === 0 && (
+            <p style={{ fontSize: 13, color: "#777" }}>No quizzes match.</p>
+          )}
+          {visible.map((q) => (
+            <label
+              key={q.id}
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: 10,
+                fontSize: 13,
+                padding: "8px 10px",
+                border: "2px solid #111",
+                borderRadius: 6,
+                background: pickedId === q.id ? "#fff3cc" : "#fff",
+                cursor: "pointer",
+              }}
+            >
+              <input
+                type="radio"
+                name="pick-quiz"
+                checked={pickedId === q.id}
+                onChange={() => setPickedId(q.id)}
+              />
+              <span style={{ flex: 1 }}>
+                {q.name} · L{q.level} · {q.questions?.length ?? 0} Qs
+                {q.dueDate > 0 && (
+                  <span style={{ color: "#555" }}>
+                    {" "}
+                    · due {new Date(q.dueDate).toLocaleDateString()}
+                  </span>
+                )}
+              </span>
+            </label>
+          ))}
+        </div>
         <div className="btn-row" style={{ marginTop: 18 }}>
-          <button className="btn-red" onClick={save} disabled={saving}>
-            {saving ? "Saving..." : "Save"}
+          <button
+            className="btn-red"
+            onClick={handleAssign}
+            disabled={assigning || !pickedId}
+          >
+            {assigning ? "Assigning..." : "Assign"}
           </button>
-          <button onClick={onClose} disabled={saving}>
+          <button onClick={onCancel} disabled={assigning}>
             Cancel
           </button>
         </div>
