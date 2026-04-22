@@ -1,0 +1,71 @@
+[
+  {
+    "name": "Week 1 — Creation",
+    "level": 1,
+    "category": "test",
+    "maxAttempts": 2,
+    "dueDate": "2026-05-15",
+    "allowLate": true,
+    "questions": [
+      {
+        "prompt": "Who created the heavens and the earth?",
+        "choices": ["God", "A king", "A wizard", "Nobody"],
+        "answer": "God",
+        "points": 20
+      },
+      {
+        "prompt": "What was the name of the first man?",
+        "choices": ["Noah", "Adam", "Moses", "David"],
+        "answer": "Adam",
+        "points": 20
+      },
+      {
+        "prompt": "On which day did God rest from creating?",
+        "choices": ["The 1st", "The 3rd", "The 5th", "The 7th"],
+        "answer": "The 7th",
+        "points": 20
+      }
+    ]
+  },
+  {
+    "name": "Week 2 — Moses & Exodus",
+    "level": 2,
+    "category": "test",
+    "maxAttempts": 1,
+    "dueDate": "2026-05-22",
+    "allowLate": false,
+    "questions": [
+      {
+        "prompt": "Who led God's people out of Egypt?",
+        "choices": ["Joshua", "Moses", "Samuel", "Aaron"],
+        "answer": "Moses",
+        "points": 20
+      },
+      {
+        "prompt": "Which sea did God split for the Israelites?",
+        "choices": ["Dead Sea", "Red Sea", "Sea of Galilee", "Mediterranean Sea"],
+        "answer": "Red Sea",
+        "points": 20
+      }
+    ]
+  },
+  {
+    "name": "Level 1 Bible Power-ups",
+    "level": 1,
+    "category": "bible",
+    "questions": [
+      {
+        "prompt": "What did God make on the very first day?",
+        "choices": ["The sun", "Light", "Fish", "People"],
+        "answer": "Light",
+        "points": 20
+      },
+      {
+        "prompt": "Where did God place the first people to live?",
+        "choices": ["A boat", "A cave", "The Garden of Eden", "A castle"],
+        "answer": "The Garden of Eden",
+        "points": 20
+      }
+    ]
+  }
+]

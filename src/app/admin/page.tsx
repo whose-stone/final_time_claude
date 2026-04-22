@@ -691,6 +691,55 @@ function PickQuizForBulkAssignDialog({
 
 // ---------------- Quizzes ----------------
 
+// Canonical upload shape used by BOTH the Questions-tab and Quizzes-tab
+// JSON importers. Keeping them identical means a single JSON file can be
+// used for either purpose: import it on the Quizzes tab to create a quiz
+// with metadata, or import the same file on the Questions tab to push its
+// embedded questions into the global pool used by Bible power-ups and
+// free-play pen pickups. Wrapper metadata the Questions-tab doesn't need
+// (name, maxAttempts, dueDate, allowLate) is simply ignored there.
+const UNIFIED_IMPORT_SAMPLE = JSON.stringify(
+  [
+    {
+      name: "Week 1 — Creation",
+      level: 1,
+      category: "test",
+      maxAttempts: 2,
+      dueDate: "2026-05-15",
+      allowLate: true,
+      questions: [
+        {
+          prompt: "Who created the heavens and the earth?",
+          choices: ["God", "A king", "A wizard", "Nobody"],
+          answer: "God",
+          points: 20,
+        },
+        {
+          prompt: "What was the name of the first man?",
+          choices: ["Noah", "Adam", "Moses", "David"],
+          answer: "Adam",
+          points: 20,
+        },
+      ],
+    },
+    {
+      name: "Level 1 Bible Power-ups",
+      level: 1,
+      category: "bible",
+      questions: [
+        {
+          prompt: "On which day did God rest from creating?",
+          choices: ["The 1st", "The 3rd", "The 5th", "The 7th"],
+          answer: "The 7th",
+          points: 20,
+        },
+      ],
+    },
+  ],
+  null,
+  2,
+);
+
 function blankQuiz(defaultPoints: number): Quiz {
   return {
     id: `quiz-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
@@ -1183,22 +1232,136 @@ function AssignPlayersToQuizDialog({
 //     }
 //   ]
 // Single quiz as a bare object also accepted.
-interface QuizImportRow {
+// The on-disk wrapper row used by both importers. Only `level` and
+// `questions[]` are required — the rest are optional and either ignored
+// (by the Questions-tab importer) or defaulted (by the Quizzes-tab
+// importer).
+interface WrappedImportRow {
   id?: string;
   name?: string;
   level?: number;
+  category?: string;
   maxAttempts?: number;
   dueDate?: number | string;
   allowLate?: boolean;
   questions?: Array<{
     id?: string;
     prompt?: string;
-    question?: string;
     choices?: unknown;
-    options?: unknown;
     answer?: string;
     points?: number;
   }>;
+}
+
+// Parse the textarea contents into a homogeneous list of wrapper rows.
+// Accepts either a single wrapper object or an array of wrappers. Writes
+// any parsing error to `setError` and returns null on failure so callers
+// can early-return.
+function parseImportText(
+  text: string,
+  setError: (msg: string) => void,
+): { rows: WrappedImportRow[] } | null {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(text);
+  } catch (err) {
+    setError(`JSON parse error: ${err instanceof Error ? err.message : String(err)}`);
+    return null;
+  }
+  const rows: WrappedImportRow[] = Array.isArray(parsed)
+    ? (parsed as WrappedImportRow[])
+    : parsed && typeof parsed === "object"
+      ? [parsed as WrappedImportRow]
+      : [];
+  if (rows.length === 0) {
+    setError(
+      'Expected a JSON array of quiz wrappers like [{ "level": 1, "questions": [...] }], or a single wrapper object.',
+    );
+    return null;
+  }
+  return { rows };
+}
+
+// Shared validation for one wrapper: returns the validated level and the
+// cleaned, typed Question[] (without category — callers assign it). Writes
+// any error to `setError` and returns null.
+function validateWrapperRow(
+  r: WrappedImportRow | undefined,
+  idx: number,
+  defaultPoints: number,
+  setError: (msg: string) => void,
+): { level: LevelId; questions: Question[] } | null {
+  if (!r || typeof r !== "object") {
+    setError(`Entry #${idx} is not an object.`);
+    return null;
+  }
+  const level = Number(r.level);
+  if (!Number.isInteger(level) || level < 1 || level > 5) {
+    setError(`Entry #${idx}: "level" must be an integer 1..5.`);
+    return null;
+  }
+  const qs = Array.isArray(r.questions) ? r.questions : [];
+  if (qs.length === 0) {
+    setError(`Entry #${idx}: "questions" must be a non-empty array.`);
+    return null;
+  }
+  const out: Question[] = [];
+  for (let j = 0; j < qs.length; j++) {
+    const q = qs[j];
+    const qi = j + 1;
+    if (!q || typeof q !== "object") {
+      setError(`Entry #${idx} Q${qi}: is not an object.`);
+      return null;
+    }
+    const prompt = q.prompt;
+    if (typeof prompt !== "string" || !prompt.trim()) {
+      setError(`Entry #${idx} Q${qi}: "prompt" is required.`);
+      return null;
+    }
+    const rawChoices = q.choices;
+    if (!Array.isArray(rawChoices)) {
+      setError(`Entry #${idx} Q${qi}: "choices" must be an array of strings.`);
+      return null;
+    }
+    const choices = (rawChoices as unknown[])
+      .map((c) => (typeof c === "string" ? c.trim() : ""))
+      .filter(Boolean);
+    if (choices.length < 2) {
+      setError(`Entry #${idx} Q${qi}: need at least 2 non-empty choices.`);
+      return null;
+    }
+    if (typeof q.answer !== "string" || !q.answer.trim()) {
+      setError(`Entry #${idx} Q${qi}: "answer" is required.`);
+      return null;
+    }
+    if (!choices.includes(q.answer.trim())) {
+      setError(
+        `Entry #${idx} Q${qi}: "answer" (${q.answer}) must match one of the choices exactly.`,
+      );
+      return null;
+    }
+    const points =
+      typeof q.points === "number" && q.points >= 0 && q.points <= 1000
+        ? Math.floor(q.points)
+        : defaultPoints;
+    out.push({
+      id:
+        typeof q.id === "string" && q.id.trim()
+          ? q.id.trim()
+          : `q-${Date.now()}-${idx}-${j}-${Math.floor(Math.random() * 10000)}`,
+      level: level as LevelId,
+      // Category is the caller's responsibility — Quizzes tab hard-codes
+      // "test"; Questions tab uses the wrapper's `category` (default
+      // inherited from the panel filter).
+      category: "test",
+      type: "multiple_choice",
+      prompt: prompt.trim(),
+      choices,
+      answer: q.answer.trim(),
+      points,
+    });
+  }
+  return { level: level as LevelId, questions: out };
 }
 
 function QuizImportDialog({
@@ -1215,34 +1378,6 @@ function QuizImportDialog({
   const [progress, setProgress] = useState<{ done: number; total: number } | null>(null);
   const [saving, setSaving] = useState(false);
 
-  const sample = JSON.stringify(
-    [
-      {
-        name: "Week 1 — Creation",
-        level: 1,
-        maxAttempts: 2,
-        dueDate: "2026-05-15",
-        allowLate: true,
-        questions: [
-          {
-            prompt: "Who created the heavens and the earth?",
-            choices: ["God", "A king", "A wizard", "Nobody"],
-            answer: "God",
-            points: 20,
-          },
-          {
-            prompt: "What was the name of the first man?",
-            choices: ["Noah", "Adam", "Moses", "David"],
-            answer: "Adam",
-            points: 20,
-          },
-        ],
-      },
-    ],
-    null,
-    2,
-  );
-
   async function handleFileChoose(e: React.ChangeEvent<HTMLInputElement>) {
     const f = e.target.files?.[0];
     if (!f) return;
@@ -1257,35 +1392,16 @@ function QuizImportDialog({
   async function handleImport() {
     setError(null);
     setProgress(null);
-    let parsed: unknown;
-    try {
-      parsed = JSON.parse(text);
-    } catch (err) {
-      setError(`JSON parse error: ${err instanceof Error ? err.message : String(err)}`);
-      return;
-    }
-    const rows: QuizImportRow[] = Array.isArray(parsed)
-      ? (parsed as QuizImportRow[])
-      : [parsed as QuizImportRow];
-    if (rows.length === 0) {
-      setError("No quizzes found in the JSON.");
-      return;
-    }
+    const parsed = parseImportText(text, setError);
+    if (!parsed) return;
+    const { rows } = parsed;
 
     const cleaned: Quiz[] = [];
     for (let i = 0; i < rows.length; i++) {
       const r = rows[i];
       const idx = i + 1;
-      if (!r || typeof r !== "object") {
-        setError(`Quiz #${idx} is not an object.`);
-        return;
-      }
-      const level = Number(r.level);
-      if (!Number.isInteger(level) || level < 1 || level > 5) {
-        setError(`Quiz #${idx}: "level" must be 1..5.`);
-        return;
-      }
-      const name = typeof r.name === "string" && r.name.trim() ? r.name.trim() : `Quiz ${idx}`;
+      const validated = validateWrapperRow(r, idx, defaultPoints, setError);
+      if (!validated) return;
       let dueMs = 0;
       if (typeof r.dueDate === "number") dueMs = r.dueDate;
       else if (typeof r.dueDate === "string" && r.dueDate.trim()) {
@@ -1296,59 +1412,20 @@ function QuizImportDialog({
         }
         dueMs = t;
       }
-      const qs = Array.isArray(r.questions) ? r.questions : [];
-      if (qs.length === 0) {
-        setError(`Quiz #${idx}: needs at least one question.`);
-        return;
-      }
-      const questions: Question[] = [];
-      for (let j = 0; j < qs.length; j++) {
-        const q = qs[j];
-        const qi = j + 1;
-        const prompt = q.prompt ?? q.question;
-        if (typeof prompt !== "string" || !prompt.trim()) {
-          setError(`Quiz #${idx} Q${qi}: needs a prompt.`);
-          return;
-        }
-        const rawChoices = q.choices ?? q.options;
-        if (!Array.isArray(rawChoices)) {
-          setError(`Quiz #${idx} Q${qi}: "choices" must be an array.`);
-          return;
-        }
-        const choices = (rawChoices as unknown[])
-          .map((c) => (typeof c === "string" ? c.trim() : ""))
-          .filter(Boolean);
-        if (choices.length < 2) {
-          setError(`Quiz #${idx} Q${qi}: need at least 2 non-empty choices.`);
-          return;
-        }
-        if (typeof q.answer !== "string" || !choices.includes(q.answer.trim())) {
-          setError(
-            `Quiz #${idx} Q${qi}: "answer" must match one of the choices exactly.`,
-          );
-          return;
-        }
-        const points =
-          typeof q.points === "number" && q.points >= 0 ? Math.floor(q.points) : defaultPoints;
-        questions.push({
-          id: q.id?.trim() || `q-${Date.now()}-${i}-${j}-${Math.floor(Math.random() * 10000)}`,
-          level: level as LevelId,
-          category: "test",
-          type: "multiple_choice",
-          prompt: prompt.trim(),
-          choices,
-          answer: q.answer.trim(),
-          points,
-        });
-      }
+      // Quizzes are always graded-category ("test") questions regardless
+      // of the wrapper's category field; Bible power-up trivia doesn't
+      // belong in a student-takeable quiz.
+      const name =
+        typeof r.name === "string" && r.name.trim() ? r.name.trim() : `Quiz ${idx}`;
       cleaned.push({
         id: r.id?.trim() || `quiz-${Date.now()}-${i}-${Math.floor(Math.random() * 10000)}`,
         name,
-        level: level as LevelId,
-        maxAttempts: Number.isInteger(r.maxAttempts) && r.maxAttempts! >= 0 ? r.maxAttempts! : 1,
+        level: validated.level,
+        maxAttempts:
+          Number.isInteger(r.maxAttempts) && r.maxAttempts! >= 0 ? r.maxAttempts! : 1,
         dueDate: dueMs,
         allowLate: !!r.allowLate,
-        questions,
+        questions: validated.questions.map((q) => ({ ...q, category: "test" })),
         createdAt: Date.now(),
         updatedAt: Date.now(),
       });
@@ -1390,7 +1467,7 @@ function QuizImportDialog({
           rows={14}
           value={text}
           onChange={(e) => setText(e.target.value)}
-          placeholder={sample}
+          placeholder={UNIFIED_IMPORT_SAMPLE}
           style={{
             width: "100%",
             fontFamily: 'ui-monospace, "Courier New", monospace',
@@ -1400,7 +1477,7 @@ function QuizImportDialog({
           spellCheck={false}
         />
         <div className="btn-row" style={{ marginTop: 8 }}>
-          <button onClick={() => setText(sample)}>Use Sample</button>
+          <button onClick={() => setText(UNIFIED_IMPORT_SAMPLE)}>Use Sample</button>
           <button onClick={() => setText("")} disabled={!text}>
             Clear
           </button>
@@ -1618,7 +1695,6 @@ function QuestionsPanel({
         <ImportJsonDialog
           defaultPoints={defaultPoints}
           defaultCategory={filterCategory === "all" ? "test" : filterCategory}
-          defaultLevel={filterLevel || 1}
           onCancel={() => setImporting(false)}
           onImported={async () => {
             setImporting(false);
@@ -1632,39 +1708,14 @@ function QuestionsPanel({
 
 // ---------------- Import JSON ----------------
 
-// The importer accepts two roughly-equivalent schemas so pasting in
-// question banks from various sources works without reformatting:
-//
-//   { level, category, prompt, choices, answer, points, id }   ← native
-//   { difficulty, question, options, answer, category, points, id }
-//
-// Any of those aliases are normalised into the native shape before
-// validation. Missing category defaults to whatever category the admin
-// is currently filtering on (or "test" when viewing All).
-interface ImportRow {
-  level?: number;
-  difficulty?: number;
-  category?: string;
-  prompt?: string;
-  question?: string;
-  choices?: unknown;
-  options?: unknown;
-  answer?: string;
-  points?: number;
-  id?: string;
-  type?: string;
-}
-
 function ImportJsonDialog({
   defaultPoints,
   defaultCategory,
-  defaultLevel,
   onCancel,
   onImported,
 }: {
   defaultPoints: number;
   defaultCategory: QuestionCategory;
-  defaultLevel: LevelId;
   onCancel: () => void;
   onImported: () => Promise<void>;
 }) {
@@ -1672,25 +1723,6 @@ function ImportJsonDialog({
   const [error, setError] = useState<string | null>(null);
   const [progress, setProgress] = useState<{ done: number; total: number } | null>(null);
   const [saving, setSaving] = useState(false);
-
-  const sample = JSON.stringify(
-    [
-      {
-        difficulty: defaultLevel,
-        question: "Who built the ark?",
-        options: ["Moses", "Noah", "Abraham", "David"],
-        answer: "Noah",
-      },
-      {
-        difficulty: defaultLevel,
-        question: "Who was swallowed by a great fish?",
-        options: ["Jonah", "Daniel", "Peter", "Elijah"],
-        answer: "Jonah",
-      },
-    ],
-    null,
-    2,
-  );
 
   async function handleFileChoose(e: React.ChangeEvent<HTMLInputElement>) {
     const f = e.target.files?.[0];
@@ -1708,105 +1740,35 @@ function ImportJsonDialog({
     setError(null);
     setProgress(null);
 
-    let parsed: unknown;
-    try {
-      parsed = JSON.parse(text);
-    } catch (err) {
-      setError(
-        `JSON parse error: ${err instanceof Error ? err.message : String(err)}`,
-      );
-      return;
-    }
+    const parsed = parseImportText(text, setError);
+    if (!parsed) return;
+    const { rows } = parsed;
 
-    // Accept either an array or an object with {questions: [...]}.
-    let rows: ImportRow[];
-    if (Array.isArray(parsed)) {
-      rows = parsed as ImportRow[];
-    } else if (parsed && typeof parsed === "object" && Array.isArray((parsed as { questions?: unknown }).questions)) {
-      rows = (parsed as { questions: ImportRow[] }).questions;
-    } else {
-      setError(
-        'Expected a JSON array of questions, or an object like {"questions": [...]}.',
-      );
-      return;
-    }
-
-    if (rows.length === 0) {
-      setError("The JSON had no question entries.");
-      return;
-    }
-
-    // Validate each row first so we either import everything or nothing.
+    // Walk each wrapper and flatten its embedded questions into the global
+    // /questions pool, tagging each with the wrapper's level + category.
+    // Wrapper-level metadata (name, maxAttempts, dueDate, allowLate) is
+    // ignored on this tab — use the Quizzes tab to honor those fields.
     const cleaned: Question[] = [];
     for (let i = 0; i < rows.length; i++) {
       const r = rows[i];
       const idx = i + 1;
-      if (!r || typeof r !== "object") {
-        setError(`Entry #${idx} is not an object.`);
-        return;
-      }
-      // Accept aliases: `difficulty` -> level, `question` -> prompt,
-      // `options` -> choices.
-      const rawLevel = r.level ?? r.difficulty;
-      const level = Number(rawLevel);
-      if (!Number.isInteger(level) || level < 1 || level > 5) {
+      const validated = validateWrapperRow(r, idx, defaultPoints, setError);
+      if (!validated) return;
+      const rawCategory = r.category ?? defaultCategory;
+      if (rawCategory !== "bible" && rawCategory !== "test") {
         setError(
-          `Entry #${idx}: "level" (or "difficulty") must be an integer 1..5.`,
+          `Entry #${idx}: "category" must be "bible" or "test" (got "${rawCategory}").`,
         );
         return;
       }
-      const category = r.category ?? defaultCategory;
-      if (category !== "bible" && category !== "test") {
-        setError(`Entry #${idx}: "category" must be "bible" or "test".`);
-        return;
+      for (const q of validated.questions) {
+        cleaned.push({ ...q, category: rawCategory as QuestionCategory });
       }
-      const prompt = r.prompt ?? r.question;
-      if (typeof prompt !== "string" || prompt.trim() === "") {
-        setError(`Entry #${idx}: "prompt" (or "question") is required.`);
-        return;
-      }
-      const rawChoices = r.choices ?? r.options;
-      if (!Array.isArray(rawChoices)) {
-        setError(
-          `Entry #${idx}: "choices" (or "options") must be an array of strings.`,
-        );
-        return;
-      }
-      const choices = (rawChoices as unknown[])
-        .map((c) => (typeof c === "string" ? c.trim() : ""))
-        .filter((c) => c !== "");
-      if (choices.length < 2) {
-        setError(`Entry #${idx}: need at least 2 non-empty choices.`);
-        return;
-      }
-      if (typeof r.answer !== "string" || r.answer.trim() === "") {
-        setError(`Entry #${idx}: "answer" is required.`);
-        return;
-      }
-      if (!choices.includes(r.answer.trim())) {
-        setError(
-          `Entry #${idx}: "answer" (${r.answer}) must match one of the choices exactly.`,
-        );
-        return;
-      }
-      const points =
-        typeof r.points === "number" && r.points >= 0 && r.points <= 1000
-          ? Math.floor(r.points)
-          : defaultPoints;
-      const id =
-        typeof r.id === "string" && r.id.trim() !== ""
-          ? r.id.trim()
-          : `q-${Date.now()}-${i}-${Math.floor(Math.random() * 10000)}`;
-      cleaned.push({
-        id,
-        level: level as LevelId,
-        category: category as QuestionCategory,
-        type: "multiple_choice",
-        prompt: prompt.trim(),
-        choices,
-        answer: r.answer.trim(),
-        points,
-      });
+    }
+
+    if (cleaned.length === 0) {
+      setError("The JSON had no question entries.");
+      return;
     }
 
     // All valid — write sequentially so any RTDB rule rejection surfaces
@@ -1831,18 +1793,20 @@ function ImportJsonDialog({
       <div style={{ ...panel, maxWidth: 720 }}>
         <h2 className="title" style={{ fontSize: 24 }}>IMPORT QUESTIONS FROM JSON</h2>
         <p style={{ fontSize: 14, lineHeight: 1.6, color: "#333" }}>
-          Paste or upload a JSON array of Bible and/or Test questions. Each
-          entry needs: <code>difficulty</code> / <code>level</code> (1-5),{" "}
-          <code>question</code> / <code>prompt</code>, <code>options</code>{" "}
-          / <code>choices</code> (typically 4 strings), and{" "}
-          <code>answer</code> (must match one of the options exactly).
+          Same wrapper format as the Quizzes tab: an array of{" "}
+          <code>{"{ level, category, questions: [...] }"}</code> objects.
+          Each embedded question&apos;s prompt / choices / answer / points is
+          added to the global pool used by Bible power-ups and free-play
+          pen pickups, tagged with the wrapper&apos;s <code>level</code>{" "}
+          (1–5) and <code>category</code> (<code>&quot;bible&quot;</code>{" "}
+          or <code>&quot;test&quot;</code>, defaults to{" "}
+          <strong>{defaultCategory}</strong> if the wrapper omits it).
         </p>
         <p style={{ fontSize: 14, lineHeight: 1.6, color: "#333" }}>
-          <code>category</code> (<code>&quot;bible&quot;</code> or{" "}
-          <code>&quot;test&quot;</code>) is optional — if omitted it
-          defaults to the panel&apos;s current Category filter (currently{" "}
-          <strong>{defaultCategory}</strong>). <code>points</code> and{" "}
-          <code>id</code> are also optional.
+          Wrapper metadata like <code>name</code>, <code>maxAttempts</code>,{" "}
+          <code>dueDate</code>, and <code>allowLate</code> is ignored here —
+          use the <strong>Quizzes</strong> tab to import the same file as a
+          quiz with those fields honored.
         </p>
 
         <div style={{ marginBottom: 10 }}>
@@ -1857,7 +1821,7 @@ function ImportJsonDialog({
         <textarea
           value={text}
           onChange={(e) => setText(e.target.value)}
-          placeholder={sample}
+          placeholder={UNIFIED_IMPORT_SAMPLE}
           rows={14}
           style={{
             width: "100%",
@@ -1871,7 +1835,7 @@ function ImportJsonDialog({
         <div className="btn-row" style={{ marginTop: 8 }}>
           <button
             type="button"
-            onClick={() => setText(sample)}
+            onClick={() => setText(UNIFIED_IMPORT_SAMPLE)}
             title="Load a small example you can edit"
           >
             Use Sample
