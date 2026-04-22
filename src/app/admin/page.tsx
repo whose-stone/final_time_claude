@@ -743,18 +743,20 @@ function QuizzesPanel({
   }
 
   async function handleSave(q: Quiz) {
-    const cleaned: Quiz = {
-      ...q,
-      name: q.name.trim() || "Untitled Quiz",
-      questions: (q.questions || []).map((qq, i) => ({
-        ...qq,
-        id: qq.id || `${q.id}-q-${i}`,
-        level: q.level,
-        category: "test",
-        choices: (qq.choices || []).map((c) => c.trim()).filter(Boolean),
-      })),
-    };
-    const bad = cleaned.questions.findIndex(
+    const questions = (q.questions || []).map((qq, i) => ({
+      ...qq,
+      id: qq.id || `${q.id}-q-${i}`,
+      category: "test" as QuestionCategory,
+      choices: (qq.choices || []).map((c) => c.trim()).filter(Boolean),
+    }));
+    const badLevel = questions.findIndex(
+      (qq) => !Number.isInteger(qq.level) || qq.level < 1 || qq.level > 5,
+    );
+    if (badLevel >= 0) {
+      alert(`Question ${badLevel + 1}: level must be set to 1–5.`);
+      return;
+    }
+    const bad = questions.findIndex(
       (qq) => !qq.prompt.trim() || (qq.choices || []).length < 2 || !(qq.choices || []).includes(qq.answer),
     );
     if (bad >= 0) {
@@ -763,6 +765,15 @@ function QuizzesPanel({
       );
       return;
     }
+    const cleaned: Quiz = {
+      ...q,
+      name: q.name.trim() || "Untitled Quiz",
+      // The quiz-level stage (which adventure backdrop a student lands
+      // on) is derived from the first question's level. Authors reorder
+      // questions to pick a stage.
+      level: questions[0].level,
+      questions,
+    };
     await saveQuiz(cleaned);
     setEditing(null);
     await onReload();
@@ -890,13 +901,19 @@ function QuizEditor({
     : "";
 
   function addQuestion() {
+    const existing = quiz.questions || [];
+    // Default a new question's level to the previous question's level so
+    // filling out a single-level quiz doesn't require changing the level
+    // picker on every row.
+    const nextLevel: LevelId =
+      (existing[existing.length - 1]?.level as LevelId | undefined) ?? 1;
     onChange({
       ...quiz,
       questions: [
-        ...(quiz.questions || []),
+        ...existing,
         {
-          id: `q-${Date.now()}-${(quiz.questions || []).length}`,
-          level: quiz.level,
+          id: `q-${Date.now()}-${existing.length}`,
+          level: nextLevel,
           category: "test",
           type: "multiple_choice",
           prompt: "",
@@ -930,20 +947,6 @@ function QuizEditor({
               value={quiz.name}
               onChange={(e) => onChange({ ...quiz, name: e.target.value })}
             />
-          </Row>
-          <Row label="Level">
-            <select
-              value={quiz.level}
-              onChange={(e) =>
-                onChange({ ...quiz, level: parseInt(e.target.value, 10) as LevelId })
-              }
-            >
-              {([1, 2, 3, 4, 5] as LevelId[]).map((l) => (
-                <option key={l} value={l}>
-                  {l}. {LEVEL_NAMES[l]}
-                </option>
-              ))}
-            </select>
           </Row>
           <Row label="Max attempts (0 = unlimited)">
             <input
@@ -1008,6 +1011,22 @@ function QuizEditor({
                   Remove
                 </button>
               </div>
+              <Row label="Level">
+                <select
+                  value={q.level}
+                  onChange={(e) =>
+                    updateQuestion(i, {
+                      level: parseInt(e.target.value, 10) as LevelId,
+                    })
+                  }
+                >
+                  {([1, 2, 3, 4, 5] as LevelId[]).map((l) => (
+                    <option key={l} value={l}>
+                      {l}. {LEVEL_NAMES[l]}
+                    </option>
+                  ))}
+                </select>
+              </Row>
               <Row label="Prompt">
                 <textarea
                   rows={2}
@@ -1183,15 +1202,19 @@ function AssignPlayersToQuizDialog({
 //     }
 //   ]
 // Single quiz as a bare object also accepted.
+// Level lives on each question, not on the wrapper — a quiz can mix
+// questions tagged with different levels (e.g. a cumulative review). The
+// quiz's stored `level` field, which picks the adventure stage when a
+// student launches it, is derived from the first question's level.
 interface QuizImportRow {
   id?: string;
   name?: string;
-  level?: number;
   maxAttempts?: number;
   dueDate?: number | string;
   allowLate?: boolean;
   questions?: Array<{
     id?: string;
+    level?: number;
     prompt?: string;
     question?: string;
     choices?: unknown;
@@ -1219,18 +1242,19 @@ function QuizImportDialog({
     [
       {
         name: "Week 1 — Creation",
-        level: 1,
         maxAttempts: 2,
         dueDate: "2026-05-15",
         allowLate: true,
         questions: [
           {
+            level: 1,
             prompt: "Who created the heavens and the earth?",
             choices: ["God", "A king", "A wizard", "Nobody"],
             answer: "God",
             points: 20,
           },
           {
+            level: 1,
             prompt: "What was the name of the first man?",
             choices: ["Noah", "Adam", "Moses", "David"],
             answer: "Adam",
@@ -1280,11 +1304,6 @@ function QuizImportDialog({
         setError(`Quiz #${idx} is not an object.`);
         return;
       }
-      const level = Number(r.level);
-      if (!Number.isInteger(level) || level < 1 || level > 5) {
-        setError(`Quiz #${idx}: "level" must be 1..5.`);
-        return;
-      }
       const name = typeof r.name === "string" && r.name.trim() ? r.name.trim() : `Quiz ${idx}`;
       let dueMs = 0;
       if (typeof r.dueDate === "number") dueMs = r.dueDate;
@@ -1305,6 +1324,13 @@ function QuizImportDialog({
       for (let j = 0; j < qs.length; j++) {
         const q = qs[j];
         const qi = j + 1;
+        const qLevel = Number(q.level);
+        if (!Number.isInteger(qLevel) || qLevel < 1 || qLevel > 5) {
+          setError(
+            `Quiz #${idx} Q${qi}: "level" must be an integer 1..5 on every question.`,
+          );
+          return;
+        }
         const prompt = q.prompt ?? q.question;
         if (typeof prompt !== "string" || !prompt.trim()) {
           setError(`Quiz #${idx} Q${qi}: needs a prompt.`);
@@ -1332,7 +1358,7 @@ function QuizImportDialog({
           typeof q.points === "number" && q.points >= 0 ? Math.floor(q.points) : defaultPoints;
         questions.push({
           id: q.id?.trim() || `q-${Date.now()}-${i}-${j}-${Math.floor(Math.random() * 10000)}`,
-          level: level as LevelId,
+          level: qLevel as LevelId,
           category: "test",
           type: "multiple_choice",
           prompt: prompt.trim(),
@@ -1341,10 +1367,14 @@ function QuizImportDialog({
           points,
         });
       }
+      // Quiz-level stage (visual theme + gameplay config) is derived from
+      // the first question's level. Authors who want a specific stage can
+      // just order their questions accordingly.
+      const launchLevel = questions[0].level;
       cleaned.push({
         id: r.id?.trim() || `quiz-${Date.now()}-${i}-${Math.floor(Math.random() * 10000)}`,
         name,
-        level: level as LevelId,
+        level: launchLevel,
         maxAttempts: Number.isInteger(r.maxAttempts) && r.maxAttempts! >= 0 ? r.maxAttempts! : 1,
         dueDate: dueMs,
         allowLate: !!r.allowLate,
@@ -1375,10 +1405,13 @@ function QuizImportDialog({
         <h2 className="title" style={{ fontSize: 24 }}>IMPORT QUIZZES</h2>
         <p style={{ fontSize: 14, lineHeight: 1.6, color: "#333" }}>
           Paste or upload a JSON array of quizzes with embedded questions.
-          Each quiz needs <code>name</code>, <code>level</code> (1–5), and a
-          <code> questions</code> array. Optional: <code>maxAttempts</code>{" "}
-          (0 = unlimited), <code>dueDate</code> (ISO date or ms epoch),{" "}
-          <code>allowLate</code>.
+          Each quiz needs <code>name</code> and a <code>questions</code>{" "}
+          array. Every question must carry its own <code>level</code>{" "}
+          (1–5) so a quiz can mix levels for review. Optional wrapper
+          fields: <code>maxAttempts</code> (0 = unlimited),{" "}
+          <code>dueDate</code> (ISO date or ms epoch),{" "}
+          <code>allowLate</code>. The adventure stage a student lands on
+          is taken from the first question&apos;s level.
         </p>
         <input
           type="file"
