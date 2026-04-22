@@ -171,13 +171,13 @@ function PlaytestPanel() {
       }}
     >
       <h3 style={{ marginTop: 0 }}>Admin Playtest</h3>
-      <p style={{ fontSize: 11, lineHeight: 1.5, color: "#333" }}>
+      <p style={{ fontSize: 14, lineHeight: 1.6, color: "#333" }}>
         Jump directly into any level to test gameplay, boss fight, and
         question ordering. Admin playtest sessions bypass checkpoint
         saves so you can replay freely without overwriting student
         progress.
       </p>
-      <div style={{ display: "grid", gap: 10, fontSize: 10, marginTop: 12 }}>
+      <div style={{ display: "grid", gap: 10, fontSize: 14, marginTop: 12 }}>
         <Row label="Level">
           <select
             value={level}
@@ -236,7 +236,7 @@ function PlayersPanel({
   }
 
   if (players.length === 0) {
-    return <p style={{ fontSize: 10 }}>No players yet. Students will appear here after they sign up and begin playing.</p>;
+    return <p style={{ fontSize: 14 }}>No players yet. Students will appear here after they sign up and begin playing.</p>;
   }
 
   return (
@@ -395,7 +395,7 @@ function QuestionsPanel({
   return (
     <>
       <div className="btn-row" style={{ marginBottom: 10, alignItems: "center" }}>
-        <label style={{ fontSize: 10 }}>Level:</label>
+        <label style={{ fontSize: 14 }}>Level:</label>
         <select value={filterLevel} onChange={(e) => setFilterLevel(parseInt(e.target.value, 10) as 0 | LevelId)}>
           <option value={0}>All</option>
           {([1, 2, 3, 4, 5] as LevelId[]).map((l) => (
@@ -404,7 +404,7 @@ function QuestionsPanel({
             </option>
           ))}
         </select>
-        <label style={{ fontSize: 10 }}>Category:</label>
+        <label style={{ fontSize: 14 }}>Category:</label>
         <select
           value={filterCategory}
           onChange={(e) => setFilterCategory(e.target.value as QuestionCategory | "all")}
@@ -692,15 +692,15 @@ function ImportJsonDialog({
   return (
     <div style={overlay}>
       <div style={{ ...panel, maxWidth: 720 }}>
-        <h2 className="title" style={{ fontSize: 18 }}>IMPORT QUESTIONS FROM JSON</h2>
-        <p style={{ fontSize: 10, lineHeight: 1.6, color: "#333" }}>
+        <h2 className="title" style={{ fontSize: 24 }}>IMPORT QUESTIONS FROM JSON</h2>
+        <p style={{ fontSize: 14, lineHeight: 1.6, color: "#333" }}>
           Paste or upload a JSON array of Bible and/or Test questions. Each
           entry needs: <code>difficulty</code> / <code>level</code> (1-5),{" "}
           <code>question</code> / <code>prompt</code>, <code>options</code>{" "}
           / <code>choices</code> (typically 4 strings), and{" "}
           <code>answer</code> (must match one of the options exactly).
         </p>
-        <p style={{ fontSize: 10, lineHeight: 1.6, color: "#333" }}>
+        <p style={{ fontSize: 14, lineHeight: 1.6, color: "#333" }}>
           <code>category</code> (<code>&quot;bible&quot;</code> or{" "}
           <code>&quot;test&quot;</code>) is optional — if omitted it
           defaults to the panel&apos;s current Category filter (currently{" "}
@@ -713,7 +713,7 @@ function ImportJsonDialog({
             type="file"
             accept="application/json,.json"
             onChange={handleFileChoose}
-            style={{ fontSize: 10 }}
+            style={{ fontSize: 14 }}
           />
         </div>
 
@@ -725,8 +725,8 @@ function ImportJsonDialog({
           style={{
             width: "100%",
             fontFamily: 'ui-monospace, "Courier New", monospace',
-            fontSize: 11,
-            lineHeight: 1.4,
+            fontSize: 14,
+            lineHeight: 1.5,
           }}
           spellCheck={false}
         />
@@ -752,10 +752,10 @@ function ImportJsonDialog({
           <div
             style={{
               marginTop: 12,
-              padding: 10,
+              padding: 12,
               background: "#fde2e2",
               border: "2px solid #a52020",
-              fontSize: 10,
+              fontSize: 13,
               lineHeight: 1.5,
               whiteSpace: "pre-wrap",
             }}
@@ -767,10 +767,10 @@ function ImportJsonDialog({
           <div
             style={{
               marginTop: 12,
-              padding: 10,
+              padding: 12,
               background: progress.done === progress.total ? "#dcefe0" : "#fef3c7",
               border: `2px solid ${progress.done === progress.total ? "#2a7a43" : "#a88120"}`,
-              fontSize: 10,
+              fontSize: 13,
             }}
           >
             {progress.done === progress.total
@@ -810,8 +810,8 @@ function QuestionEditor({
   return (
     <div style={overlay}>
       <div style={{ ...panel, maxWidth: 620 }}>
-        <h2 className="title" style={{ fontSize: 18 }}>EDIT QUESTION</h2>
-        <div style={{ display: "grid", gap: 10, fontSize: 10 }}>
+        <h2 className="title" style={{ fontSize: 24 }}>EDIT QUESTION</h2>
+        <div style={{ display: "grid", gap: 12, fontSize: 14 }}>
           <Row label="Level">
             <select
               value={question.level}
@@ -914,7 +914,7 @@ function ConfigPanel({
   }
 
   return (
-    <div style={{ display: "grid", gap: 16, fontSize: 10 }}>
+    <div style={{ display: "grid", gap: 16, fontSize: 14 }}>
       <div
         style={{
           background: "#fff",
@@ -1027,10 +1027,10 @@ function Row({ label, children }: { label: string; children: React.ReactNode }) 
     <div
       style={{
         display: "grid",
-        gridTemplateColumns: "180px 1fr",
+        gridTemplateColumns: "220px 1fr",
         alignItems: "center",
-        gap: 10,
-        marginBottom: 8,
+        gap: 12,
+        marginBottom: 10,
       }}
     >
       <label>{label}</label>
@@ -1043,7 +1043,7 @@ const tableStyle: React.CSSProperties = {
   width: "100%",
   borderCollapse: "collapse",
   background: "#fff",
-  fontSize: 10,
+  fontSize: 13,
   border: "3px solid #111",
 };
 

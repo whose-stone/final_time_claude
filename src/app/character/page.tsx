@@ -95,7 +95,7 @@ function CharacterCard({
       }}
     >
       <FirebirdSprite character={character} size={120} />
-      <div style={{ fontSize: 12 }}>{label}</div>
+      <div style={{ fontSize: 16 }}>{label}</div>
     </button>
   );
 }

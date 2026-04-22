@@ -83,7 +83,7 @@ export default function LoginPage() {
           </div>
         </form>
 
-        <div style={{ textAlign: "center", fontSize: 9, margin: "16px 0 8px", color: "#666" }}>— OR —</div>
+        <div style={{ textAlign: "center", fontSize: 13, margin: "18px 0 10px", color: "#666" }}>— OR —</div>
 
         <button
           type="button"
@@ -106,7 +106,7 @@ export default function LoginPage() {
           Sign in with Google
         </button>
 
-        <p style={{ fontSize: 9, marginTop: 18, color: "#555" }}>
+        <p style={{ fontSize: 12, lineHeight: 1.6, marginTop: 20, color: "#555" }}>
           Students receive credentials from their teacher. Admins configure the
           game from the Admin Panel.
         </p>

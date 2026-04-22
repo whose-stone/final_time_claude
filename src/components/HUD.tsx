@@ -36,12 +36,12 @@ export default function HUD({
         color: "#ffd447",
         border: "4px solid #111",
         borderRadius: 8,
-        padding: "14px 18px",
+        padding: "16px 20px",
         display: "flex",
         justifyContent: "space-between",
         flexWrap: "wrap",
-        gap: 14,
-        fontSize: 16,
+        gap: 16,
+        fontSize: 18,
       }}
     >
       <HudItem label="GRADE" value={grade} big />
@@ -60,8 +60,8 @@ export default function HUD({
 function HudItem({ label, value, big }: { label: string; value: string; big?: boolean }) {
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-      <span style={{ fontSize: 11, color: "#c8c8d8", letterSpacing: 1 }}>{label}</span>
-      <span style={{ fontSize: big ? 26 : 16, lineHeight: 1 }}>{value}</span>
+      <span style={{ fontSize: 13, color: "#c8c8d8", letterSpacing: 1 }}>{label}</span>
+      <span style={{ fontSize: big ? 30 : 18, lineHeight: 1 }}>{value}</span>
     </div>
   );
 }

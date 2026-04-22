@@ -327,17 +327,17 @@ function GamePageInner() {
         <div
           style={{
             maxWidth: 960,
-            margin: "0 auto 8px",
+            margin: "0 auto 10px",
             background: "#ffd447",
             color: "#0b1b3a",
             border: "3px solid #0b1b3a",
             borderRadius: 6,
-            padding: "8px 14px",
+            padding: "10px 16px",
             display: "flex",
             justifyContent: "space-between",
             alignItems: "center",
-            gap: 10,
-            fontSize: 12,
+            gap: 12,
+            fontSize: 14,
             letterSpacing: 1,
             fontWeight: "bold",
           }}
@@ -347,7 +347,7 @@ function GamePageInner() {
           </span>
           <button
             className="btn-navy"
-            style={{ fontSize: 10, padding: "6px 10px" }}
+            style={{ fontSize: 13, padding: "8px 14px" }}
             onClick={() => router.replace("/admin")}
           >
             ← Back to Admin
@@ -372,14 +372,14 @@ function GamePageInner() {
         style={{
           maxWidth: 960,
           margin: "12px auto",
-          fontSize: 13,
-          lineHeight: 1.5,
+          fontSize: 15,
+          lineHeight: 1.6,
           color: "#222",
           textAlign: "center",
           background: "#faf3e0",
           border: "2px solid #111",
           borderRadius: 6,
-          padding: "10px 14px",
+          padding: "12px 16px",
         }}
       >
         ← → / A D to move · Space or ↑ to jump · F or Shift to pray ·
