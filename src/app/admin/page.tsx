@@ -122,7 +122,7 @@ export default function AdminPage() {
           className={tab === "questions" ? "btn-red" : ""}
           onClick={() => setTab("questions")}
         >
-          Questions ({questions.length})
+          Bible Trivia ({questions.length})
         </button>
         <button
           className={tab === "config" ? "btn-red" : ""}
@@ -168,23 +168,30 @@ export default function AdminPage() {
           await refreshAll();
         }} />
       )}
-      {tab === "playtest" && <PlaytestPanel />}
+      {tab === "playtest" && <PlaytestPanel quizzes={quizzes} />}
     </main>
   );
 }
 
 // ---------------- Playtest ----------------
-function PlaytestPanel() {
+function PlaytestPanel({ quizzes }: { quizzes: Quiz[] }) {
   const router = useRouter();
   const [level, setLevel] = useState<LevelId>(1);
   const [character, setCharacter] = useState<"boy" | "girl">("boy");
+  const [quizId, setQuizId] = useState<string>("");
+
+  const activeQuiz = quizzes.find((q) => q.id === quizId) ?? null;
+  // When a quiz is picked the game locks to the quiz's authored level, so
+  // reflect that in the picker to avoid a confusing mismatch.
+  const effectiveLevel = activeQuiz ? activeQuiz.level : level;
 
   function launch() {
     const params = new URLSearchParams({
-      level: String(level),
+      level: String(effectiveLevel),
       char: character,
       admin: "1",
     });
+    if (quizId) params.set("quizId", quizId);
     router.push(`/game?${params.toString()}`);
   }
 
@@ -203,13 +210,26 @@ function PlaytestPanel() {
         Jump directly into any level to test gameplay, boss fight, and
         question ordering. Admin playtest sessions bypass checkpoint
         saves so you can replay freely without overwriting student
-        progress.
+        progress. Optionally pick a quiz to playtest its embedded
+        pen+paper questions.
       </p>
       <div style={{ display: "grid", gap: 10, fontSize: 14, marginTop: 12 }}>
+        <Row label="Quiz (optional)">
+          <select value={quizId} onChange={(e) => setQuizId(e.target.value)}>
+            <option value="">— Free play (no quiz) —</option>
+            {quizzes.map((q) => (
+              <option key={q.id} value={q.id}>
+                {q.name} · Level {q.level}. {LEVEL_NAMES[q.level]} ·{" "}
+                {q.questions?.length ?? 0} Qs
+              </option>
+            ))}
+          </select>
+        </Row>
         <Row label="Level">
           <select
-            value={level}
+            value={effectiveLevel}
             onChange={(e) => setLevel(parseInt(e.target.value, 10) as LevelId)}
+            disabled={!!activeQuiz}
           >
             {([1, 2, 3, 4, 5] as LevelId[]).map((l) => (
               <option key={l} value={l}>
@@ -806,7 +826,6 @@ function QuizzesPanel({
             <thead>
               <tr>
                 <th>Name</th>
-                <th>Level</th>
                 <th>Qs</th>
                 <th>Max Attempts</th>
                 <th>Due</th>
@@ -819,9 +838,6 @@ function QuizzesPanel({
               {quizzes.map((q) => (
                 <tr key={q.id}>
                   <td>{q.name}</td>
-                  <td>
-                    {q.level}. {LEVEL_NAMES[q.level]}
-                  </td>
                   <td>{q.questions?.length ?? 0}</td>
                   <td>{q.maxAttempts > 0 ? q.maxAttempts : "∞"}</td>
                   <td>
@@ -2155,17 +2171,6 @@ function ConfigPanel({
                 value={lc.gargoyleCount}
                 onChange={(e) =>
                   updateLevel(l, { gargoyleCount: parseInt(e.target.value, 10) || 0 })
-                }
-              />
-            </Row>
-            <Row label="Questions (pen pickups)">
-              <input
-                type="number"
-                min={1}
-                max={10}
-                value={lc.questionCount}
-                onChange={(e) =>
-                  updateLevel(l, { questionCount: parseInt(e.target.value, 10) || 1 })
                 }
               />
             </Row>

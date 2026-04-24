@@ -139,17 +139,21 @@ function GamePageInner() {
 
   const levelCfg = config.levels[currentLevel];
   // Pen+paper pickups draw from the active quiz's embedded question list if
-  // one is loaded (quiz-driven run); otherwise they fall back to the
-  // global "test" pool for free-play practice.
+  // one is loaded (quiz-driven run) — the quiz's own question list defines
+  // the count. For free-play practice the per-level config still controls
+  // how many "test" questions spawn.
   const levelQuestions = useMemo(() => {
     if (activeQuiz) {
-      return (activeQuiz.questions || []).slice(0, levelCfg.questionCount);
+      return activeQuiz.questions || [];
     }
     const atLevel = allQuestions.filter((q) => q.level === currentLevel);
     const tests = atLevel.filter((q) => (q.category ?? "bible") === "test");
     const pool = tests.length > 0 ? tests : atLevel;
     return pool.slice(0, levelCfg.questionCount);
   }, [allQuestions, currentLevel, levelCfg.questionCount, activeQuiz]);
+  const penQuestionCount = activeQuiz
+    ? (activeQuiz.questions?.length ?? 0)
+    : levelCfg.questionCount;
   // Floating Bible pickups always ask "bible"-category trivia.
   const bibleQuestions = useMemo(() => {
     const atLevel = allQuestions.filter((q) => q.level === currentLevel);
@@ -254,7 +258,7 @@ function GamePageInner() {
         lives,
         gargoyleCount: levelCfg.gargoyleCount,
         bibleCount: levelCfg.triviaBibleCount,
-        questionCount: levelCfg.questionCount,
+        questionCount: penQuestionCount,
         limitedLives: isPlaytest ? false : config.limitedLives,
         onEvent: (e: GameEvent) => eventHandlerRef.current(e),
       },
@@ -459,7 +463,7 @@ function GamePageInner() {
         prayers={g.player.prayers}
         lives={g.player.lives}
         nextQuestion={g.answeredQuestions + 1}
-        totalQuestions={levelCfg.questionCount}
+        totalQuestions={penQuestionCount}
         correct={g.stats.correct}
         incorrect={g.stats.incorrect}
         limitedLives={config.limitedLives}
@@ -493,7 +497,7 @@ function GamePageInner() {
           headerLabel={
             triviaMode === "bible"
               ? "POWER-UP! BIBLE TRIVIA — ANSWER FOR 3 PRAYERS"
-              : `LEVEL ${currentLevel} QUESTION ${triviaIndex + 1}/${levelCfg.questionCount}`
+              : `LEVEL ${currentLevel} QUESTION ${triviaIndex + 1}/${penQuestionCount}`
           }
           onResolve={onTriviaResolve}
         />
