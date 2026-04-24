@@ -51,6 +51,12 @@ export interface GameConfig {
   limitedLives: boolean;
   startingLives: number;
   defaultPointsPerQuestion: number;
+  // Registration guard: if `allowedEmailDomains` is non-empty, a new user's
+  // email domain must match one of these entries (case-insensitive, bare
+  // domain like "acu.edu"). `exemptEmails` lists individual addresses that
+  // bypass the domain check. Both empty = no restriction.
+  allowedEmailDomains?: string[];
+  exemptEmails?: string[];
   levels: Record<LevelId, LevelConfig>;
 }
 
@@ -58,6 +64,8 @@ export const DEFAULT_CONFIG: GameConfig = {
   limitedLives: true,
   startingLives: 3,
   defaultPointsPerQuestion: 20,
+  allowedEmailDomains: [],
+  exemptEmails: [],
   levels: {
     1: { level: 1, triviaBibleCount: 3, gargoyleCount: 5, questionCount: 5, pointsPerQuestion: 20 },
     2: { level: 2, triviaBibleCount: 3, gargoyleCount: 6, questionCount: 5, pointsPerQuestion: 20 },
@@ -133,6 +141,27 @@ export interface QuizAttempt {
   // true when the student submitted after the quiz's dueDate (only possible
   // if allowLate was true).
   isLate: boolean;
+}
+
+// Returns true when `email` may register under the admin's allowlist rules.
+// Empty `allowedEmailDomains` means no restriction; otherwise the email
+// must either match an `exemptEmails` entry or its domain must appear in
+// the allowlist. All comparisons are case-insensitive.
+export function isEmailAllowed(email: string, cfg: GameConfig): boolean {
+  const normalized = (email || "").trim().toLowerCase();
+  if (!normalized) return false;
+  const domains = (cfg.allowedEmailDomains || [])
+    .map((d) => d.trim().toLowerCase().replace(/^@/, ""))
+    .filter(Boolean);
+  const exempt = (cfg.exemptEmails || [])
+    .map((e) => e.trim().toLowerCase())
+    .filter(Boolean);
+  if (domains.length === 0 && exempt.length === 0) return true;
+  if (exempt.includes(normalized)) return true;
+  const at = normalized.lastIndexOf("@");
+  if (at < 0) return false;
+  const domain = normalized.slice(at + 1);
+  return domains.includes(domain);
 }
 
 export function letterGrade(percent: number): "A" | "B" | "C" | "D" | "F" {
