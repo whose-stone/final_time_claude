@@ -121,16 +121,18 @@ function GamePageInner() {
   }, [user, quizIdParam]);
 
   // Initialize starting level. In admin playtest mode the query param wins
-  // so the admin lands exactly on the level they picked. A quiz locks the
-  // level to whatever the quiz was authored for.
+  // so the admin lands exactly on the level they picked (even when a quiz
+  // is also attached — letting admins spot-check any level of a
+  // multi-level quiz). Students running an assigned quiz fall back to the
+  // quiz's authored level.
   useEffect(() => {
     if (!ready) return;
-    if (activeQuiz) {
-      setCurrentLevel(activeQuiz.level);
-      return;
-    }
     if (isPlaytest && playtestLevel) {
       setCurrentLevel(playtestLevel);
+      return;
+    }
+    if (activeQuiz) {
+      setCurrentLevel(activeQuiz.level);
       return;
     }
     if (!player) return;
@@ -138,18 +140,22 @@ function GamePageInner() {
   }, [player, ready, isPlaytest, playtestLevel, activeQuiz]);
 
   const levelCfg = config.levels[currentLevel];
-  // Pen+paper pickups draw from the active quiz's embedded question list if
-  // one is loaded (quiz-driven run); otherwise they fall back to the
-  // global "test" pool for free-play practice.
+  // Pen+paper pickups draw from the active quiz's embedded question list
+  // when one is loaded — filtered to the current level so a multi-level
+  // quiz spawns only the questions tagged for whichever stage is being
+  // played. Free-play practice falls back to the global "test" pool.
   const levelQuestions = useMemo(() => {
     if (activeQuiz) {
-      return (activeQuiz.questions || []).slice(0, levelCfg.questionCount);
+      return (activeQuiz.questions || []).filter((q) => q.level === currentLevel);
     }
     const atLevel = allQuestions.filter((q) => q.level === currentLevel);
     const tests = atLevel.filter((q) => (q.category ?? "bible") === "test");
     const pool = tests.length > 0 ? tests : atLevel;
     return pool.slice(0, levelCfg.questionCount);
   }, [allQuestions, currentLevel, levelCfg.questionCount, activeQuiz]);
+  const penQuestionCount = activeQuiz
+    ? levelQuestions.length
+    : levelCfg.questionCount;
   // Floating Bible pickups always ask "bible"-category trivia.
   const bibleQuestions = useMemo(() => {
     const atLevel = allQuestions.filter((q) => q.level === currentLevel);
@@ -254,7 +260,7 @@ function GamePageInner() {
         lives,
         gargoyleCount: levelCfg.gargoyleCount,
         bibleCount: levelCfg.triviaBibleCount,
-        questionCount: levelCfg.questionCount,
+        questionCount: penQuestionCount,
         limitedLives: isPlaytest ? false : config.limitedLives,
         onEvent: (e: GameEvent) => eventHandlerRef.current(e),
       },
@@ -459,7 +465,7 @@ function GamePageInner() {
         prayers={g.player.prayers}
         lives={g.player.lives}
         nextQuestion={g.answeredQuestions + 1}
-        totalQuestions={levelCfg.questionCount}
+        totalQuestions={penQuestionCount}
         correct={g.stats.correct}
         incorrect={g.stats.incorrect}
         limitedLives={config.limitedLives}
@@ -493,7 +499,7 @@ function GamePageInner() {
           headerLabel={
             triviaMode === "bible"
               ? "POWER-UP! BIBLE TRIVIA — ANSWER FOR 3 PRAYERS"
-              : `LEVEL ${currentLevel} QUESTION ${triviaIndex + 1}/${levelCfg.questionCount}`
+              : `LEVEL ${currentLevel} QUESTION ${triviaIndex + 1}/${penQuestionCount}`
           }
           onResolve={onTriviaResolve}
         />

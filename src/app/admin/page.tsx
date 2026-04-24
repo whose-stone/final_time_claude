@@ -122,7 +122,7 @@ export default function AdminPage() {
           className={tab === "questions" ? "btn-red" : ""}
           onClick={() => setTab("questions")}
         >
-          Questions ({questions.length})
+          Bible Trivia ({questions.length})
         </button>
         <button
           className={tab === "config" ? "btn-red" : ""}
@@ -168,16 +168,28 @@ export default function AdminPage() {
           await refreshAll();
         }} />
       )}
-      {tab === "playtest" && <PlaytestPanel />}
+      {tab === "playtest" && <PlaytestPanel quizzes={quizzes} />}
     </main>
   );
 }
 
 // ---------------- Playtest ----------------
-function PlaytestPanel() {
+function PlaytestPanel({ quizzes }: { quizzes: Quiz[] }) {
   const router = useRouter();
   const [level, setLevel] = useState<LevelId>(1);
   const [character, setCharacter] = useState<"boy" | "girl">("boy");
+  const [quizId, setQuizId] = useState<string>("");
+
+  const activeQuiz = quizzes.find((q) => q.id === quizId) ?? null;
+  // Summarize the quiz's per-level coverage so the admin can see which
+  // levels have questions without having to open the editor. Quiz questions
+  // carry their own `level`, so a single quiz can span multiple levels.
+  const quizLevelCounts = activeQuiz
+    ? ([1, 2, 3, 4, 5] as LevelId[]).map((l) => ({
+        level: l,
+        count: (activeQuiz.questions || []).filter((q) => q.level === l).length,
+      }))
+    : [];
 
   function launch() {
     const params = new URLSearchParams({
@@ -185,6 +197,7 @@ function PlaytestPanel() {
       char: character,
       admin: "1",
     });
+    if (quizId) params.set("quizId", quizId);
     router.push(`/game?${params.toString()}`);
   }
 
@@ -203,24 +216,46 @@ function PlaytestPanel() {
         Jump directly into any level to test gameplay, boss fight, and
         question ordering. Admin playtest sessions bypass checkpoint
         saves so you can replay freely without overwriting student
-        progress.
+        progress. Optionally pick a quiz to playtest its embedded
+        pen+paper questions.
       </p>
       <div style={{ display: "grid", gap: 10, fontSize: 14, marginTop: 12 }}>
-        <Row label="Level">
+        <Row label="Quiz (optional)">
           <select
-            value={level}
-            onChange={(e) => setLevel(parseInt(e.target.value, 10) as LevelId)}
+            style={{ width: "100%" }}
+            value={quizId}
+            onChange={(e) => setQuizId(e.target.value)}
           >
-            {([1, 2, 3, 4, 5] as LevelId[]).map((l) => (
-              <option key={l} value={l}>
-                {l}. {LEVEL_NAMES[l]}
-                {l === 5 ? " (Boss)" : ""}
+            <option value="">— Free play (no quiz) —</option>
+            {quizzes.map((q) => (
+              <option key={q.id} value={q.id}>
+                {q.name} · {q.questions?.length ?? 0} Qs
               </option>
             ))}
           </select>
         </Row>
+        <Row label="Level">
+          <select
+            style={{ width: "100%" }}
+            value={level}
+            onChange={(e) => setLevel(parseInt(e.target.value, 10) as LevelId)}
+          >
+            {([1, 2, 3, 4, 5] as LevelId[]).map((l) => {
+              const lc = quizLevelCounts.find((x) => x.level === l);
+              const suffix = activeQuiz ? ` · ${lc?.count ?? 0} Qs` : "";
+              return (
+                <option key={l} value={l}>
+                  {l}. {LEVEL_NAMES[l]}
+                  {l === 5 ? " (Boss)" : ""}
+                  {suffix}
+                </option>
+              );
+            })}
+          </select>
+        </Row>
         <Row label="Character">
           <select
+            style={{ width: "100%" }}
             value={character}
             onChange={(e) => setCharacter(e.target.value as "boy" | "girl")}
           >
@@ -806,7 +841,6 @@ function QuizzesPanel({
             <thead>
               <tr>
                 <th>Name</th>
-                <th>Level</th>
                 <th>Qs</th>
                 <th>Max Attempts</th>
                 <th>Due</th>
@@ -819,9 +853,6 @@ function QuizzesPanel({
               {quizzes.map((q) => (
                 <tr key={q.id}>
                   <td>{q.name}</td>
-                  <td>
-                    {q.level}. {LEVEL_NAMES[q.level]}
-                  </td>
                   <td>{q.questions?.length ?? 0}</td>
                   <td>{q.maxAttempts > 0 ? q.maxAttempts : "∞"}</td>
                   <td>
@@ -2158,26 +2189,6 @@ function ConfigPanel({
                 }
               />
             </Row>
-            <Row label="Questions (pen pickups)">
-              <input
-                type="number"
-                min={1}
-                max={10}
-                value={lc.questionCount}
-                onChange={(e) =>
-                  updateLevel(l, { questionCount: parseInt(e.target.value, 10) || 1 })
-                }
-              />
-            </Row>
-            <Row label="Points per question">
-              <input
-                type="number"
-                value={lc.pointsPerQuestion}
-                onChange={(e) =>
-                  updateLevel(l, { pointsPerQuestion: parseInt(e.target.value, 10) || 0 })
-                }
-              />
-            </Row>
           </div>
         );
       })}
@@ -2197,7 +2208,7 @@ function Row({ label, children }: { label: string; children: React.ReactNode }) 
     <div
       style={{
         display: "grid",
-        gridTemplateColumns: "220px 1fr",
+        gridTemplateColumns: "220px minmax(0, 1fr)",
         alignItems: "center",
         gap: 12,
         marginBottom: 10,
