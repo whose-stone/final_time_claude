@@ -181,13 +181,19 @@ function PlaytestPanel({ quizzes }: { quizzes: Quiz[] }) {
   const [quizId, setQuizId] = useState<string>("");
 
   const activeQuiz = quizzes.find((q) => q.id === quizId) ?? null;
-  // When a quiz is picked the game locks to the quiz's authored level, so
-  // reflect that in the picker to avoid a confusing mismatch.
-  const effectiveLevel = activeQuiz ? activeQuiz.level : level;
+  // Summarize the quiz's per-level coverage so the admin can see which
+  // levels have questions without having to open the editor. Quiz questions
+  // carry their own `level`, so a single quiz can span multiple levels.
+  const quizLevelCounts = activeQuiz
+    ? ([1, 2, 3, 4, 5] as LevelId[]).map((l) => ({
+        level: l,
+        count: (activeQuiz.questions || []).filter((q) => q.level === l).length,
+      }))
+    : [];
 
   function launch() {
     const params = new URLSearchParams({
-      level: String(effectiveLevel),
+      level: String(level),
       char: character,
       admin: "1",
     });
@@ -215,32 +221,41 @@ function PlaytestPanel({ quizzes }: { quizzes: Quiz[] }) {
       </p>
       <div style={{ display: "grid", gap: 10, fontSize: 14, marginTop: 12 }}>
         <Row label="Quiz (optional)">
-          <select value={quizId} onChange={(e) => setQuizId(e.target.value)}>
+          <select
+            style={{ width: "100%" }}
+            value={quizId}
+            onChange={(e) => setQuizId(e.target.value)}
+          >
             <option value="">— Free play (no quiz) —</option>
             {quizzes.map((q) => (
               <option key={q.id} value={q.id}>
-                {q.name} · Level {q.level}. {LEVEL_NAMES[q.level]} ·{" "}
-                {q.questions?.length ?? 0} Qs
+                {q.name} · {q.questions?.length ?? 0} Qs
               </option>
             ))}
           </select>
         </Row>
         <Row label="Level">
           <select
-            value={effectiveLevel}
+            style={{ width: "100%" }}
+            value={level}
             onChange={(e) => setLevel(parseInt(e.target.value, 10) as LevelId)}
-            disabled={!!activeQuiz}
           >
-            {([1, 2, 3, 4, 5] as LevelId[]).map((l) => (
-              <option key={l} value={l}>
-                {l}. {LEVEL_NAMES[l]}
-                {l === 5 ? " (Boss)" : ""}
-              </option>
-            ))}
+            {([1, 2, 3, 4, 5] as LevelId[]).map((l) => {
+              const lc = quizLevelCounts.find((x) => x.level === l);
+              const suffix = activeQuiz ? ` · ${lc?.count ?? 0} Qs` : "";
+              return (
+                <option key={l} value={l}>
+                  {l}. {LEVEL_NAMES[l]}
+                  {l === 5 ? " (Boss)" : ""}
+                  {suffix}
+                </option>
+              );
+            })}
           </select>
         </Row>
         <Row label="Character">
           <select
+            style={{ width: "100%" }}
             value={character}
             onChange={(e) => setCharacter(e.target.value as "boy" | "girl")}
           >
@@ -2174,15 +2189,6 @@ function ConfigPanel({
                 }
               />
             </Row>
-            <Row label="Points per question">
-              <input
-                type="number"
-                value={lc.pointsPerQuestion}
-                onChange={(e) =>
-                  updateLevel(l, { pointsPerQuestion: parseInt(e.target.value, 10) || 0 })
-                }
-              />
-            </Row>
           </div>
         );
       })}
@@ -2202,7 +2208,7 @@ function Row({ label, children }: { label: string; children: React.ReactNode }) 
     <div
       style={{
         display: "grid",
-        gridTemplateColumns: "220px 1fr",
+        gridTemplateColumns: "220px minmax(0, 1fr)",
         alignItems: "center",
         gap: 12,
         marginBottom: 10,
