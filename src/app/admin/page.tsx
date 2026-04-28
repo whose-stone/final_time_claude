@@ -2155,6 +2155,55 @@ function ConfigPanel({
             }
           />
         </Row>
+        <div
+          style={{
+            marginTop: 14,
+            paddingTop: 14,
+            borderTop: "2px dashed #bbb",
+          }}
+        >
+          <h4 style={{ margin: "0 0 6px 0" }}>Registration Allowlist</h4>
+          <p style={{ fontSize: 12, color: "#555", margin: "0 0 10px 0", lineHeight: 1.5 }}>
+            New signups are accepted only when their email's domain is in
+            the allowed list, OR the exact address appears in the exemption
+            list. Leave both empty to allow anyone to register. Existing
+            accounts are never blocked retroactively.
+          </p>
+          <Row label="Allowed email domains">
+            <textarea
+              rows={3}
+              placeholder="One per line, e.g. acu.edu"
+              value={(cfg.allowedEmailDomains || []).join("\n")}
+              onChange={(e) =>
+                setCfg({
+                  ...cfg,
+                  allowedEmailDomains: e.target.value
+                    .split(/[\s,]+/)
+                    .map((s) => s.trim().replace(/^@/, "").toLowerCase())
+                    .filter(Boolean),
+                })
+              }
+              style={{ width: "100%", fontFamily: "inherit" }}
+            />
+          </Row>
+          <Row label="Exempt emails">
+            <textarea
+              rows={3}
+              placeholder="One per line, e.g. teacher@gmail.com"
+              value={(cfg.exemptEmails || []).join("\n")}
+              onChange={(e) =>
+                setCfg({
+                  ...cfg,
+                  exemptEmails: e.target.value
+                    .split(/[\s,]+/)
+                    .map((s) => s.trim().toLowerCase())
+                    .filter(Boolean),
+                })
+              }
+              style={{ width: "100%", fontFamily: "inherit" }}
+            />
+          </Row>
+        </div>
       </div>
 
       {([1, 2, 3, 4, 5] as LevelId[]).map((l) => {

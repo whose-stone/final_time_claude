@@ -18,8 +18,8 @@ import {
   User,
 } from "firebase/auth";
 import { getAdminEmails, getFirebase } from "@/lib/firebase";
-import { loadPlayer, newPlayerState, savePlayer } from "@/lib/db";
-import { PlayerState } from "@/lib/types";
+import { loadGameConfig, loadPlayer, newPlayerState, savePlayer } from "@/lib/db";
+import { isEmailAllowed, PlayerState } from "@/lib/types";
 
 interface AuthCtx {
   user: User | null;
@@ -69,10 +69,33 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     await signInWithEmailAndPassword(auth, email, password);
   }
 
+  // The RTDB config node requires an authenticated read, so we can only
+  // consult the admin's email allowlist AFTER creating the Firebase Auth
+  // account. If the new account doesn't pass, delete it so nothing is
+  // left behind and the same email can be re-used once the admin adds an
+  // exemption or allowed domain.
+  async function enforceEmailAllowlistForNewUser(
+    createdUser: User,
+    email: string,
+  ) {
+    const cfg = await loadGameConfig();
+    if (isEmailAllowed(email, cfg)) return;
+    try {
+      await createdUser.delete();
+    } catch {
+      const { auth } = getFirebase();
+      if (auth) await signOut(auth);
+    }
+    throw new Error(
+      "This email address isn't authorized to register. Ask your teacher to add your domain or email to the allowed list.",
+    );
+  }
+
   async function register(email: string, password: string) {
     const { auth } = getFirebase();
     if (!auth) throw new Error("Firebase not configured");
-    await createUserWithEmailAndPassword(auth, email, password);
+    const cred = await createUserWithEmailAndPassword(auth, email, password);
+    await enforceEmailAllowlistForNewUser(cred.user, email);
   }
 
   async function signInWithGoogle() {
@@ -80,7 +103,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (!auth) throw new Error("Firebase not configured");
     const provider = new GoogleAuthProvider();
     provider.setCustomParameters({ prompt: "select_account" });
-    await signInWithPopup(auth, provider);
+    const cred = await signInWithPopup(auth, provider);
+    // Only apply the allowlist to brand-new Google sign-ins. Existing
+    // players keep access even if the admin later tightens the list.
+    const existing = await loadPlayer(cred.user.uid);
+    if (!existing) {
+      await enforceEmailAllowlistForNewUser(cred.user, cred.user.email || "");
+    }
   }
 
   async function logout() {
