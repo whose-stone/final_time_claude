@@ -5,23 +5,19 @@ import { letterGrade, LEVEL_NAMES, LevelId } from "@/lib/types";
 interface Props {
   levelId: LevelId;
   prayers: number;
-  lives: number;
   nextQuestion: number; // 1-indexed position of next question
   totalQuestions: number;
   correct: number;
   incorrect: number;
-  limitedLives: boolean;
 }
 
 export default function HUD({
   levelId,
   prayers,
-  lives,
   nextQuestion,
   totalQuestions,
   correct,
   incorrect,
-  limitedLives,
 }: Props) {
   const attempted = correct + incorrect;
   const percent = attempted > 0 ? (correct / attempted) * 100 : 100;
@@ -47,11 +43,7 @@ export default function HUD({
       <HudItem label="GRADE" value={grade} big />
       <HudItem label="LEVEL" value={`${levelId} ${LEVEL_NAMES[levelId]}`} />
       <HudItem label="NEXT Q" value={`${Math.min(nextQuestion, totalQuestions)}/${totalQuestions}`} />
-      <HudItem label="PRAYERS" value={`\uD83D\uDE4F x${prayers}`} />
-      <HudItem
-        label="LIVES"
-        value={limitedLives ? `\u2764 x${Math.max(0, lives)}` : "\u221E"}
-      />
+      <HudItem label="PRAYERS" value={`🙏 x${prayers}`} />
       <HudItem label="SCORE" value={`${correct} / ${attempted}`} />
     </div>
   );

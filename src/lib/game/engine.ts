@@ -38,6 +38,9 @@ const PRAYER_RANGE = 400;
 const PRAYER_BONUS_POINTS = 10;
 // How many frames an angelic gargoyle floats upward before fading out.
 const ANGEL_TICKS = 120;
+// Score penalty applied whenever the player dies. Death never affects
+// the quiz letter grade (correct/incorrect counts) — only the score.
+const DEATH_SCORE_PENALTY = 5;
 
 let nextId = 1;
 const uid = () => nextId++;
@@ -338,16 +341,13 @@ export class Game {
   }
 
   private kill() {
-    if (this.limitedLives) {
-      this.player.lives -= 1;
-    }
+    // Lives are gone — every death just costs the player a small score
+    // penalty (clamped at 0) and respawns them. The grade (correct vs
+    // incorrect on quiz questions) is never touched here. The page-level
+    // death-count failsafe handles the 10-death escape hatch.
+    this.stats.score = Math.max(0, this.stats.score - DEATH_SCORE_PENALTY);
     this.player.invincibleTicks = INVINCIBLE_TICKS;
     this.onEvent({ type: "player_died" });
-    if (this.limitedLives && this.player.lives <= 0) {
-      this.ended = true;
-      this.onEvent({ type: "game_over" });
-      return;
-    }
     // Respawn at last checkpoint (near last collected pen)
     this.player.pos.x = 80 + this.answeredQuestions * 120;
     this.player.pos.y = 100;

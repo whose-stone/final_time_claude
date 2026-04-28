@@ -17,8 +17,8 @@ import {
   GameConfig,
   LevelId,
   Question,
-  QUESTIONS_ONLY_DEATH_THRESHOLD,
   Quiz,
+  RUN_DEATH_FAILSAFE,
 } from "@/lib/types";
 import { Game } from "@/lib/game/engine";
 import { GameEvent, LevelStats } from "@/lib/game/types";
@@ -94,12 +94,28 @@ function GamePageInner() {
   });
 
   const [results, setResults] = useState<null | (LevelStats & { boss?: boolean })>(null);
-  const [gameOver, setGameOver] = useState(false);
   const [hudTick, setHudTick] = useState(0);
+  // Per-run death counter. When this reaches RUN_DEATH_FAILSAFE during a
+  // quiz run we automatically punt the student into the questions-only
+  // page so they can still submit a graded attempt without the
+  // platforming. Cumulative deaths (PlayerState.deathCount) are still
+  // tracked separately on the saved profile. Held in a ref so the
+  // event handler can read+write it without re-render churn.
+  const runDeathCountRef = useRef(0);
+  const failsafeFiredRef = useRef(false);
+  // Question IDs the student already resolved (correct or incorrect) via
+  // pen-and-paper pickups during this run. Used to filter the
+  // questions-only failsafe down to the unanswered remainder.
+  const answeredIdsRef = useRef<Set<string>>(new Set());
 
   const gameRef = useRef<Game | null>(null);
   const eventHandlerRef = useRef<(e: GameEvent) => void>(() => {});
   const builtRef = useRef<{ level: LevelId | 0; key: number }>({ level: 0, key: -1 });
+  // Guards the level-init effect so a refreshPlayer() after a level finish
+  // doesn't reset the player back to level 1 (or to checkpointLevel) and
+  // undo the progression. Initialization should happen exactly once per
+  // mounted run.
+  const initLevelRef = useRef<boolean>(false);
 
   // Redirect when not authed or no character. Admins playtesting via
   // ?admin=1 skip the character-selection redirect because the playtest
@@ -133,16 +149,23 @@ function GamePageInner() {
     })();
   }, [user, quizIdParam]);
 
-  // Initialize starting level. In admin playtest mode the query param wins
-  // so the admin lands exactly on the level they picked (even when a quiz
-  // is also attached — letting admins spot-check any level of a
-  // multi-level quiz). Students running an assigned quiz always start at
+  // Initialize starting level exactly once per mounted run. In admin
+  // playtest mode the query param wins so the admin lands exactly on the
+  // level they picked. Students running an assigned quiz always start at
   // level 1 and play through the full 1→5 adventure with the quiz's
   // questions filtered per level; one quiz attempt covers the whole run.
+  //
+  // The `initLevelRef` guard is critical: without it, the `player`
+  // dependency would re-run this effect after every refreshPlayer() call
+  // (e.g. after appendLevelResult on level completion) and snap
+  // currentLevel back to 1 (quiz run) or to checkpointLevel (free play),
+  // making the run loop between levels 1 and 2 forever.
   useEffect(() => {
     if (!ready) return;
+    if (initLevelRef.current) return;
     if (isPlaytest && playtestLevel) {
       setCurrentLevel(playtestLevel);
+      initLevelRef.current = true;
       return;
     }
     if (activeQuiz) {
@@ -155,10 +178,12 @@ function GamePageInner() {
         gargoylesDefeated: 0,
         timeSeconds: 0,
       });
+      initLevelRef.current = true;
       return;
     }
     if (!player) return;
     setCurrentLevel(player.checkpointLevel || player.currentLevel || 1);
+    initLevelRef.current = true;
   }, [player, ready, isPlaytest, playtestLevel, activeQuiz]);
 
   const levelCfg = config.levels[currentLevel];
@@ -222,15 +247,42 @@ function GamePageInner() {
           break;
         }
         case "player_died": {
-          // Each life lost bumps the player's cumulative death count so the
-          // start screen / game-over panel can offer a "Questions Only Mode"
-          // escape once the threshold is crossed. Admin playtests never
-          // touch saved progress.
+          // Bump the cumulative death counter on the saved profile (used
+          // by the start screen's optional "Questions Only Mode" escape)
+          // and the per-run counter that drives the auto-failsafe.
+          // Admin playtests never touch saved progress.
           if (!isPlaytest && player) {
             const next = (player.deathCount ?? 0) + 1;
             updatePlayer(player.uid, { deathCount: next })
               .then(() => refreshPlayer())
               .catch(() => {});
+          }
+          runDeathCountRef.current += 1;
+          // On the RUN_DEATH_FAILSAFE-th death of an active quiz run,
+          // bail the student out to the questions-only page with the
+          // unanswered questions. Score is wiped (they get no game
+          // points from the failsafe) but a graded attempt is still
+          // recorded so the gradebook stays honest.
+          if (
+            !failsafeFiredRef.current &&
+            runDeathCountRef.current >= RUN_DEATH_FAILSAFE &&
+            activeQuiz &&
+            !isPlaytest
+          ) {
+            failsafeFiredRef.current = true;
+            try {
+              sessionStorage.setItem(
+                "questionsOnlyAnswered",
+                JSON.stringify(Array.from(answeredIdsRef.current)),
+              );
+            } catch {
+              /* ignore storage failures */
+            }
+            router.replace(
+              `/questions-only?quizId=${encodeURIComponent(
+                activeQuiz.id,
+              )}&failsafe=1`,
+            );
           }
           break;
         }
@@ -239,22 +291,19 @@ function GamePageInner() {
           handleLevelEnd(e.stats, e.type === "boss_defeated");
           break;
         }
-        case "game_over": {
-          setGameOver(true);
-          setResults({
-            level: currentLevel,
-            correct: gameRef.current?.stats.correct ?? 0,
-            incorrect: gameRef.current?.stats.incorrect ?? 0,
-            score: gameRef.current?.stats.score ?? 0,
-            gargoylesDefeated: gameRef.current?.stats.gargoylesDefeated ?? 0,
-            timeSeconds: gameRef.current?.stats.timeSeconds ?? 0,
-          });
-          break;
-        }
       }
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [bibleQuestions, levelQuestions, usedBibleIds, currentLevel, isPlaytest, player],
+    [
+      bibleQuestions,
+      levelQuestions,
+      usedBibleIds,
+      currentLevel,
+      isPlaytest,
+      player,
+      activeQuiz,
+      router,
+    ],
   );
 
   // Keep a ref to the latest onEvent so the Game instance (which stores a
@@ -283,20 +332,18 @@ function GamePageInner() {
         : player && player.checkpointLevel === currentLevel
           ? player.checkpointQuestionIndex
           : 0;
-    const lives = isPlaytest
-      ? 99
-      : config.limitedLives
-        ? Math.max(1, (player?.lives ?? config.startingLives))
-        : 99;
     const g = new Game(
       {
         level: currentLevel,
         character: effectiveChar!,
-        lives,
+        // Lives are gone — pass a placeholder so the engine API stays the
+        // same. Death now just costs score; there is no out-of-lives
+        // game-over branch.
+        lives: 99,
         gargoyleCount: levelCfg.gargoyleCount,
         bibleCount: levelCfg.triviaBibleCount,
         questionCount: penQuestionCount,
-        limitedLives: isPlaytest ? false : config.limitedLives,
+        limitedLives: false,
         onEvent: (e: GameEvent) => eventHandlerRef.current(e),
       },
       cp,
@@ -304,7 +351,6 @@ function GamePageInner() {
     gameRef.current = g;
     setUsedBibleIds(new Set());
     setResults(null);
-    setGameOver(false);
     setTriviaQuestion(null);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [gameKey, currentLevel, player, ready, isPlaytest, playtestChar]);
@@ -374,8 +420,11 @@ function GamePageInner() {
         g.grantPoints(triviaQuestion.points || 0);
       }
     } else {
-      // Level question: score points, advance checkpoint
+      // Level question: score points, advance checkpoint, and remember
+      // that this question id is no longer "unanswered" so the 10-death
+      // failsafe knows to skip it on the questions-only page.
       g.recordAnswer(correct, triviaQuestion.points || levelCfg.pointsPerQuestion);
+      answeredIdsRef.current.add(triviaQuestion.id);
       // Playtests don't advance the real student checkpoint.
       if (!isPlaytest && player) {
         await updatePlayer(player.uid, {
@@ -407,6 +456,11 @@ function GamePageInner() {
   function onReplay() {
     setAttemptStartedAt(Date.now());
     setGameKey((k) => k + 1);
+    // Replay starts a fresh run — wipe per-run trackers so the failsafe
+    // and answered-questions filter both reset cleanly.
+    runDeathCountRef.current = 0;
+    failsafeFiredRef.current = false;
+    answeredIdsRef.current = new Set();
   }
 
   function onExit() {
@@ -506,12 +560,10 @@ function GamePageInner() {
       <HUD
         levelId={currentLevel}
         prayers={g.player.prayers}
-        lives={g.player.lives}
         nextQuestion={g.answeredQuestions + 1}
         totalQuestions={penQuestionCount}
         correct={g.stats.correct}
         incorrect={g.stats.incorrect}
-        limitedLives={config.limitedLives}
       />
 
       <GameCanvas game={g} paused={!!triviaQuestion || !!results} />
@@ -550,16 +602,6 @@ function GamePageInner() {
 
       {results && (
         <LevelResults
-          onSwitchToQuestionsOnly={
-            !isPlaytest &&
-            activeQuiz &&
-            (player?.deathCount ?? 0) > QUESTIONS_ONLY_DEATH_THRESHOLD
-              ? () =>
-                  router.replace(
-                    `/questions-only?quizId=${encodeURIComponent(activeQuiz.id)}`,
-                  )
-              : undefined
-          }
           level={results.level}
           correct={results.correct}
           incorrect={results.incorrect}
@@ -567,7 +609,6 @@ function GamePageInner() {
           score={results.score}
           timeSeconds={results.timeSeconds}
           isBoss={!!results.boss}
-          gameOver={gameOver}
           onContinue={onContinue}
           onReplay={onReplay}
           onExit={onExit}

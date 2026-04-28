@@ -10,14 +10,9 @@ interface Props {
   score: number;
   timeSeconds: number;
   isBoss?: boolean;
-  gameOver?: boolean;
   onContinue: () => void;
   onReplay: () => void;
   onExit: () => void;
-  // Provided only when (a) the run was a quiz and (b) the player has
-  // crossed the questions-only death threshold. Renders an extra escape
-  // button on the GAME OVER screen.
-  onSwitchToQuestionsOnly?: () => void;
 }
 
 export default function LevelResults(p: Props) {
@@ -29,12 +24,7 @@ export default function LevelResults(p: Props) {
   return (
     <div style={overlay}>
       <div style={panel}>
-        {p.gameOver ? (
-          <>
-            <h1 style={{ color: "#ba0c2f", fontSize: 28 }}>GAME OVER</h1>
-            <p style={{ fontSize: 14, lineHeight: 1.6 }}>You ran out of lives! Don&rsquo;t give up — try again.</p>
-          </>
-        ) : p.isBoss ? (
+        {p.isBoss ? (
           <>
             <h1 style={{ color: "#ba0c2f", fontSize: 28 }}>TEACHER DEFEATED!</h1>
             <p style={{ fontSize: 14, lineHeight: 1.6 }}>
@@ -69,12 +59,17 @@ export default function LevelResults(p: Props) {
         </div>
 
         <div className="btn-row" style={{ marginTop: 18 }}>
-          {!p.gameOver && !isFinal && (
+          {!isFinal && (
             <button className="btn-red" onClick={p.onContinue}>
               Next Level →
             </button>
           )}
-          {!p.gameOver && isFinal && !p.isBoss && (
+          {isFinal && !p.isBoss && (
+            <button className="btn-red" onClick={p.onContinue}>
+              Finish Game
+            </button>
+          )}
+          {p.isBoss && (
             <button className="btn-red" onClick={p.onContinue}>
               Finish Game
             </button>
@@ -84,27 +79,6 @@ export default function LevelResults(p: Props) {
             Exit
           </button>
         </div>
-        {p.gameOver && p.onSwitchToQuestionsOnly && (
-          <div
-            style={{
-              marginTop: 14,
-              padding: 12,
-              background: "#faf3e0",
-              border: "2px dashed #0b1b3a",
-              borderRadius: 6,
-              fontSize: 13,
-              lineHeight: 1.5,
-            }}
-          >
-            Having a tough time? You can finish this quiz in pure
-            question form — no jumping, no gargoyles.
-            <div className="btn-row" style={{ marginTop: 10 }}>
-              <button className="btn-red" onClick={p.onSwitchToQuestionsOnly}>
-                📝 Switch to Questions Only Mode
-              </button>
-            </div>
-          </div>
-        )}
       </div>
     </div>
   );
