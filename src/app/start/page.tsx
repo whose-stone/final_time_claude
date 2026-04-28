@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/components/AuthProvider";
 import { listQuizzes } from "@/lib/db";
-import { Quiz } from "@/lib/types";
+import { QUESTIONS_ONLY_DEATH_THRESHOLD, Quiz } from "@/lib/types";
 
 // Student landing page after sign-in. Shows the quizzes the admin has
 // assigned to this player with attempts-remaining + due-date status. Free
@@ -120,7 +120,13 @@ export default function StartPage() {
               key={q.id}
               quiz={q}
               attemptsUsed={(player.quizAttempts?.[q.id] || []).length}
+              questionsOnlyEligible={
+                (player.deathCount ?? 0) > QUESTIONS_ONLY_DEATH_THRESHOLD
+              }
               onStart={() => router.push(`/game?quizId=${encodeURIComponent(q.id)}`)}
+              onStartQuestionsOnly={() =>
+                router.push(`/questions-only?quizId=${encodeURIComponent(q.id)}`)
+              }
             />
           ))}
         </div>
@@ -132,11 +138,15 @@ export default function StartPage() {
 function QuizCard({
   quiz,
   attemptsUsed,
+  questionsOnlyEligible,
   onStart,
+  onStartQuestionsOnly,
 }: {
   quiz: Quiz;
   attemptsUsed: number;
+  questionsOnlyEligible: boolean;
   onStart: () => void;
+  onStartQuestionsOnly: () => void;
 }) {
   const now = Date.now();
   const pastDue = quiz.dueDate > 0 && now > quiz.dueDate;
@@ -222,6 +232,16 @@ function QuizCard({
               ? "▶ Start Quiz Mode (late)"
               : "▶ Start Quiz Mode"}
         </button>
+        {questionsOnlyEligible && (
+          <button
+            className="btn-navy"
+            disabled={blocked}
+            onClick={onStartQuestionsOnly}
+            title="Skip the platforming and just answer the questions"
+          >
+            📝 Questions Only Mode
+          </button>
+        )}
       </div>
     </div>
   );

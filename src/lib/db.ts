@@ -138,6 +138,7 @@ export function newPlayerState(uid: string, email: string): PlayerState {
     checkpointLevel: 1,
     checkpointQuestionIndex: 0,
     levelResults: [],
+    deathCount: 0,
     createdAt: Date.now(),
     updatedAt: Date.now(),
   };

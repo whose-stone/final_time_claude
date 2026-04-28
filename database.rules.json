@@ -26,6 +26,7 @@
         "currentLevel":            { ".validate": "newData.isNumber() && newData.val() >= 1 && newData.val() <= 5" },
         "checkpointLevel":         { ".validate": "newData.isNumber() && newData.val() >= 1 && newData.val() <= 5" },
         "checkpointQuestionIndex": { ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 20" },
+        "deathCount":              { ".validate": "newData.isNumber() && newData.val() >= 0" },
         "createdAt":               { ".validate": "newData.isNumber()" },
         "updatedAt":               { ".validate": "newData.isNumber()" },
 

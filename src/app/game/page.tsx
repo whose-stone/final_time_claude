@@ -17,6 +17,7 @@ import {
   GameConfig,
   LevelId,
   Question,
+  QUESTIONS_ONLY_DEATH_THRESHOLD,
   Quiz,
 } from "@/lib/types";
 import { Game } from "@/lib/game/engine";
@@ -220,6 +221,19 @@ function GamePageInner() {
           setTriviaQuestion(q);
           break;
         }
+        case "player_died": {
+          // Each life lost bumps the player's cumulative death count so the
+          // start screen / game-over panel can offer a "Questions Only Mode"
+          // escape once the threshold is crossed. Admin playtests never
+          // touch saved progress.
+          if (!isPlaytest && player) {
+            const next = (player.deathCount ?? 0) + 1;
+            updatePlayer(player.uid, { deathCount: next })
+              .then(() => refreshPlayer())
+              .catch(() => {});
+          }
+          break;
+        }
         case "level_complete":
         case "boss_defeated": {
           handleLevelEnd(e.stats, e.type === "boss_defeated");
@@ -240,7 +254,7 @@ function GamePageInner() {
       }
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [bibleQuestions, levelQuestions, usedBibleIds, currentLevel],
+    [bibleQuestions, levelQuestions, usedBibleIds, currentLevel, isPlaytest, player],
   );
 
   // Keep a ref to the latest onEvent so the Game instance (which stores a
@@ -536,6 +550,16 @@ function GamePageInner() {
 
       {results && (
         <LevelResults
+          onSwitchToQuestionsOnly={
+            !isPlaytest &&
+            activeQuiz &&
+            (player?.deathCount ?? 0) > QUESTIONS_ONLY_DEATH_THRESHOLD
+              ? () =>
+                  router.replace(
+                    `/questions-only?quizId=${encodeURIComponent(activeQuiz.id)}`,
+                  )
+              : undefined
+          }
           level={results.level}
           correct={results.correct}
           incorrect={results.incorrect}

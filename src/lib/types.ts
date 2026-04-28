@@ -104,9 +104,18 @@ export interface PlayerState {
   // the admin CSV export both read from this structure; free-play runs of
   // the adventure (no quizId) do NOT write here.
   quizAttempts?: Record<string, QuizAttempt[]>;
+  // Cumulative count of player_died events across all runs. Once this
+  // crosses the QUESTIONS_ONLY_DEATH_THRESHOLD, the home screen and the
+  // game-over panel offer a "Questions Only Mode" escape that skips the
+  // platforming and just walks through the quiz questions.
+  deathCount?: number;
   createdAt: number;
   updatedAt: number;
 }
+
+// After this many cumulative deaths, the student gets the option to bail
+// out of the platforming and complete their quiz in pure question form.
+export const QUESTIONS_ONLY_DEATH_THRESHOLD = 9;
 
 // A quiz is a teacher-authored overlay on top of one adventure level: when a
 // student launches the quiz, the pen-and-paper pickups draw from the quiz's
