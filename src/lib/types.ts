@@ -117,6 +117,12 @@ export interface PlayerState {
 // out of the platforming and complete their quiz in pure question form.
 export const QUESTIONS_ONLY_DEATH_THRESHOLD = 9;
 
+// Hard auto-bailout: if the student dies this many times during a single
+// quiz run, the game forces them onto the questions-only page so they
+// can still submit a graded attempt. They get no game points from the
+// failsafe — just a grade based on correct/incorrect answers.
+export const RUN_DEATH_FAILSAFE = 10;
+
 // A quiz is a teacher-authored overlay on top of one adventure level: when a
 // student launches the quiz, the pen-and-paper pickups draw from the quiz's
 // embedded `questions` list instead of the global /questions pool. Bible

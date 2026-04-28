@@ -128,8 +128,7 @@ export type GameEvent =
   | { type: "player_hit" }
   | { type: "gargoyle_defeated" }
   | { type: "level_complete"; stats: LevelStats }
-  | { type: "boss_defeated"; stats: LevelStats }
-  | { type: "game_over" };
+  | { type: "boss_defeated"; stats: LevelStats };
 
 export interface LevelStats {
   level: LevelId;
