@@ -80,6 +80,18 @@ function GamePageInner() {
   const [triviaIndex, setTriviaIndex] = useState<number>(0); // for pen pickups
   const [usedBibleIds, setUsedBibleIds] = useState<Set<string>>(new Set());
 
+  // Cumulative stats across the whole quiz run (levels 1→5). A quiz
+  // attempt is recorded once at boss-defeat with these totals so the
+  // gradebook gets one entry per full play-through, not one per level.
+  const [quizRunStats, setQuizRunStats] = useState<LevelStats>({
+    level: 1,
+    correct: 0,
+    incorrect: 0,
+    score: 0,
+    gargoylesDefeated: 0,
+    timeSeconds: 0,
+  });
+
   const [results, setResults] = useState<null | (LevelStats & { boss?: boolean })>(null);
   const [gameOver, setGameOver] = useState(false);
   const [hudTick, setHudTick] = useState(0);
@@ -123,8 +135,9 @@ function GamePageInner() {
   // Initialize starting level. In admin playtest mode the query param wins
   // so the admin lands exactly on the level they picked (even when a quiz
   // is also attached — letting admins spot-check any level of a
-  // multi-level quiz). Students running an assigned quiz fall back to the
-  // quiz's authored level.
+  // multi-level quiz). Students running an assigned quiz always start at
+  // level 1 and play through the full 1→5 adventure with the quiz's
+  // questions filtered per level; one quiz attempt covers the whole run.
   useEffect(() => {
     if (!ready) return;
     if (isPlaytest && playtestLevel) {
@@ -132,7 +145,15 @@ function GamePageInner() {
       return;
     }
     if (activeQuiz) {
-      setCurrentLevel(activeQuiz.level);
+      setCurrentLevel(1);
+      setQuizRunStats({
+        level: 1,
+        correct: 0,
+        incorrect: 0,
+        score: 0,
+        gargoylesDefeated: 0,
+        timeSeconds: 0,
+      });
       return;
     }
     if (!player) return;
@@ -293,24 +314,36 @@ function GamePageInner() {
       timeSeconds: stats.timeSeconds,
       completedAt: Date.now(),
     });
-    // If this run was attached to an assigned quiz, record the attempt so
-    // the admin gradebook and the student's attempts-remaining counter
-    // pick it up. Free-play runs (no quizId in the URL) only write the
-    // levelResults entry above.
+    // For quiz runs, accumulate stats across every level instead of
+    // recording one attempt per level — the gradebook entry is finalized
+    // when the boss is defeated (end of the 1→5 run).
     if (activeQuiz) {
-      const completedAt = Date.now();
-      const isLate = activeQuiz.dueDate > 0 && completedAt > activeQuiz.dueDate;
-      await recordQuizAttempt(player.uid, {
-        quizId: activeQuiz.id,
-        startedAt: attemptStartedAt,
-        completedAt,
-        score: stats.score,
-        correct: stats.correct,
-        incorrect: stats.incorrect,
-        gargoylesDefeated: stats.gargoylesDefeated,
-        timeSeconds: stats.timeSeconds,
-        isLate,
-      });
+      const totals: LevelStats = {
+        level: stats.level,
+        correct: quizRunStats.correct + stats.correct,
+        incorrect: quizRunStats.incorrect + stats.incorrect,
+        score: quizRunStats.score + stats.score,
+        gargoylesDefeated:
+          quizRunStats.gargoylesDefeated + stats.gargoylesDefeated,
+        timeSeconds: quizRunStats.timeSeconds + stats.timeSeconds,
+      };
+      setQuizRunStats(totals);
+      if (boss) {
+        const completedAt = Date.now();
+        const isLate =
+          activeQuiz.dueDate > 0 && completedAt > activeQuiz.dueDate;
+        await recordQuizAttempt(player.uid, {
+          quizId: activeQuiz.id,
+          startedAt: attemptStartedAt,
+          completedAt,
+          score: totals.score,
+          correct: totals.correct,
+          incorrect: totals.incorrect,
+          gargoylesDefeated: totals.gargoylesDefeated,
+          timeSeconds: totals.timeSeconds,
+          isLate,
+        });
+      }
     }
     await refreshPlayer();
   }
@@ -347,12 +380,8 @@ function GamePageInner() {
       router.replace("/admin");
       return;
     }
-    // A quiz is a single-level run — after it ends, the student returns to
-    // their quiz list regardless of level number.
-    if (activeQuiz) {
-      router.replace("/start");
-      return;
-    }
+    // Both free-play and quiz mode walk levels 1→5; level 5 is the boss
+    // and ends the run, returning the student to the home screen.
     if (currentLevel < 5) {
       setCurrentLevel((l) => (Math.min(5, l + 1) as LevelId));
       setGameKey((k) => k + 1);
