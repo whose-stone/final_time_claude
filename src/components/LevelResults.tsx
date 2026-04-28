@@ -14,6 +14,10 @@ interface Props {
   onContinue: () => void;
   onReplay: () => void;
   onExit: () => void;
+  // Provided only when (a) the run was a quiz and (b) the player has
+  // crossed the questions-only death threshold. Renders an extra escape
+  // button on the GAME OVER screen.
+  onSwitchToQuestionsOnly?: () => void;
 }
 
 export default function LevelResults(p: Props) {
@@ -80,6 +84,27 @@ export default function LevelResults(p: Props) {
             Exit
           </button>
         </div>
+        {p.gameOver && p.onSwitchToQuestionsOnly && (
+          <div
+            style={{
+              marginTop: 14,
+              padding: 12,
+              background: "#faf3e0",
+              border: "2px dashed #0b1b3a",
+              borderRadius: 6,
+              fontSize: 13,
+              lineHeight: 1.5,
+            }}
+          >
+            Having a tough time? You can finish this quiz in pure
+            question form — no jumping, no gargoyles.
+            <div className="btn-row" style={{ marginTop: 10 }}>
+              <button className="btn-red" onClick={p.onSwitchToQuestionsOnly}>
+                📝 Switch to Questions Only Mode
+              </button>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );

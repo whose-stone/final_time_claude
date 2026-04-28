@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/components/AuthProvider";
 import { listQuizzes } from "@/lib/db";
-import { LEVEL_NAMES, Quiz } from "@/lib/types";
+import { QUESTIONS_ONLY_DEATH_THRESHOLD, Quiz } from "@/lib/types";
 
 // Student landing page after sign-in. Shows the quizzes the admin has
 // assigned to this player with attempts-remaining + due-date status. Free
@@ -120,7 +120,13 @@ export default function StartPage() {
               key={q.id}
               quiz={q}
               attemptsUsed={(player.quizAttempts?.[q.id] || []).length}
+              questionsOnlyEligible={
+                (player.deathCount ?? 0) > QUESTIONS_ONLY_DEATH_THRESHOLD
+              }
               onStart={() => router.push(`/game?quizId=${encodeURIComponent(q.id)}`)}
+              onStartQuestionsOnly={() =>
+                router.push(`/questions-only?quizId=${encodeURIComponent(q.id)}`)
+              }
             />
           ))}
         </div>
@@ -132,11 +138,15 @@ export default function StartPage() {
 function QuizCard({
   quiz,
   attemptsUsed,
+  questionsOnlyEligible,
   onStart,
+  onStartQuestionsOnly,
 }: {
   quiz: Quiz;
   attemptsUsed: number;
+  questionsOnlyEligible: boolean;
   onStart: () => void;
+  onStartQuestionsOnly: () => void;
 }) {
   const now = Date.now();
   const pastDue = quiz.dueDate > 0 && now > quiz.dueDate;
@@ -170,8 +180,8 @@ function QuizCard({
         }}
       >
         <h2 style={{ margin: 0, fontSize: 20, color: "#ba0c2f" }}>{quiz.name}</h2>
-        <div style={{ fontSize: 13, color: "#0b1b3a" }}>
-          Level {quiz.level} · {LEVEL_NAMES[quiz.level]}
+        <div style={{ fontSize: 12, color: "#0b1b3a", letterSpacing: 1 }}>
+          QUIZ MODE
         </div>
       </div>
       <div
@@ -184,7 +194,7 @@ function QuizCard({
           color: "#333",
         }}
       >
-        <span>📝 {quiz.questions?.length ?? 0} questions</span>
+        <span>📝 {quiz.questions?.length ?? 0} questions across all 5 levels</span>
         <span>
           🎯 Attempt {attemptsUsed}
           {quiz.maxAttempts > 0 ? ` / ${quiz.maxAttempts}` : " / ∞"}
@@ -197,6 +207,10 @@ function QuizCard({
           <span style={{ color: "#a88120" }}>late submissions allowed</span>
         )}
       </div>
+      <p style={{ fontSize: 12, color: "#555", margin: "10px 0 0", lineHeight: 1.5 }}>
+        Quiz mode runs the full adventure (Beach → Castle Boss). One attempt
+        is recorded after you defeat the boss.
+      </p>
       <div className="btn-row" style={{ marginTop: 16 }}>
         <button
           className="btn-red"
@@ -215,9 +229,19 @@ function QuizCard({
               ? "No attempts left"
               : "Past due"
             : pastDue
-              ? "▶ Start (late)"
-              : "▶ Start Quiz"}
+              ? "▶ Start Quiz Mode (late)"
+              : "▶ Start Quiz Mode"}
         </button>
+        {questionsOnlyEligible && (
+          <button
+            className="btn-navy"
+            disabled={blocked}
+            onClick={onStartQuestionsOnly}
+            title="Skip the platforming and just answer the questions"
+          >
+            📝 Questions Only Mode
+          </button>
+        )}
       </div>
     </div>
   );
