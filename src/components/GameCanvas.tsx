@@ -96,6 +96,8 @@ export default function GameCanvas({ game, paused }: Props) {
       ref={canvasRef}
       width={CANVAS_W}
       height={CANVAS_H}
+      onContextMenu={(e) => e.preventDefault()}
+      onTouchStart={(e) => e.preventDefault()}
       style={{
         display: "block",
         margin: "0 auto",
@@ -105,6 +107,15 @@ export default function GameCanvas({ game, paused }: Props) {
         imageRendering: "pixelated",
         width: "min(100%, 960px)",
         aspectRatio: `${CANVAS_W}/${CANVAS_H}`,
+        // Long-press on iOS Safari / Android Chrome would otherwise pop
+        // a native "Download / Share / Print" callout over the canvas
+        // (it treats <canvas> like an image). Disable selection +
+        // callout, and block default touch gestures so the player can
+        // hold a finger on the screen without interrupting gameplay.
+        WebkitTouchCallout: "none",
+        userSelect: "none",
+        WebkitUserSelect: "none",
+        touchAction: "none",
       }}
       tabIndex={0}
     />

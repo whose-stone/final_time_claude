@@ -296,18 +296,15 @@ export class Game {
         p.pos.y = pk.pos.y + pk.h;
         p.vel.y = 1;
         if (!pk.used) {
-          // Fire the trivia event BEFORE spawning the stone-shatter
-          // particles — otherwise the 18 new particles get drawn for a
-          // frame (with the render pass stuck on the last un-paused
-          // state) and the Bible question appears to lag behind the
-          // block break. Pen pickups pause+fire immediately, so match
-          // that ordering here.
+          // Two-step Bible mechanic: the block shatters and releases
+          // physical prayer-scroll pickups that arc out like debris.
+          // Walking into a scroll (next tick onward) is what actually
+          // opens the Bible trivia — no more instant modal on bump.
           pk.used = true;
-          pk.alive = false; // block shatters — no gray remnant
+          pk.alive = false;
           pk.hitTicks = 0;
-          this.paused = true;
-          this.onEvent({ type: "bible_collected" });
           this.spawnBlockDebris(pk);
+          this.spawnPrayerScrolls(pk);
         }
       } else if (p.vel.y > 0 && pk.alive) {
         // Land on top — only if the block hasn't shattered yet.
@@ -689,6 +686,53 @@ export class Game {
         continue;
       }
       if (!pk.alive) continue;
+      if (pk.kind === "prayer") {
+        // Physics: arc out of the block, fall, bounce once, settle.
+        if (!pk.vel) pk.vel = { x: 0, y: 0 };
+        if (!pk.onGround) {
+          pk.vel.y = Math.min(14, pk.vel.y + GRAVITY);
+          pk.pos.x += pk.vel.x;
+          pk.pos.y += pk.vel.y;
+          const floor = this.level.groundY - pk.h;
+          if (pk.pos.y >= floor) {
+            pk.pos.y = floor;
+            if (Math.abs(pk.vel.y) > 3) {
+              // small bounce
+              pk.vel.y = -pk.vel.y * 0.4;
+              pk.vel.x *= 0.6;
+            } else {
+              pk.vel.y = 0;
+              pk.vel.x = 0;
+              pk.onGround = true;
+            }
+          }
+        } else {
+          pk.bob += 0.08;
+        }
+        if (
+          rectsOverlap(
+            this.player.pos.x,
+            this.player.pos.y,
+            this.player.w,
+            this.player.h,
+            pk.pos.x,
+            pk.pos.y,
+            pk.w,
+            pk.h,
+          )
+        ) {
+          // Collected! Now open the Bible trivia modal. Sweep any
+          // sibling scrolls from the same block so only one question
+          // fires per broken block.
+          pk.alive = false;
+          for (const sibling of this.pickups) {
+            if (sibling !== pk && sibling.kind === "prayer") sibling.alive = false;
+          }
+          this.paused = true;
+          this.onEvent({ type: "bible_collected" });
+        }
+        continue;
+      }
       pk.bob += 0.08;
       const bobY = Math.sin(pk.bob) * 4;
       if (
@@ -707,6 +751,36 @@ export class Game {
         this.paused = true;
         this.onEvent({ type: "pen_collected", questionIndex: pk.questionIndex ?? 0 });
       }
+    }
+  }
+
+  /**
+   * Spawn a small arc of collectible prayer-scroll pickups from a
+   * shattered Ten Commandments block. The scrolls fly outward + upward
+   * then fall to the ground, where the player must walk into one to
+   * actually open the Bible trivia question.
+   */
+  private spawnPrayerScrolls(pk: Pickup) {
+    const cx = pk.pos.x + pk.w / 2;
+    const cy = pk.pos.y + pk.h / 2;
+    const SCROLL_W = 26;
+    const SCROLL_H = 26;
+    const COUNT = 3;
+    for (let i = 0; i < COUNT; i++) {
+      const t = (i + 1) / (COUNT + 1); // spread across [0..1]
+      const vx = (t - 0.5) * 8; // -4..+4 spread horizontally
+      const vy = -6 - Math.random() * 2;
+      this.pickups.push({
+        id: uid(),
+        pos: { x: cx - SCROLL_W / 2, y: cy - SCROLL_H / 2 },
+        vel: { x: vx, y: vy },
+        w: SCROLL_W,
+        h: SCROLL_H,
+        alive: true,
+        kind: "prayer",
+        bob: Math.random() * Math.PI * 2,
+        onGround: false,
+      });
     }
   }
 
