@@ -199,6 +199,10 @@ function drawPickup(ctx: CanvasRenderingContext2D, pk: Pickup, camX: number) {
     drawCommandmentsBlock(ctx, pk, x);
     return;
   }
+  if (pk.kind === "prayer") {
+    drawPrayerScroll(ctx, pk, x);
+    return;
+  }
   // Pen + paper (floating, walk-into pickup — keeps the bob animation)
   const bobY = Math.sin(pk.bob) * 4;
   const y = pk.pos.y + bobY;
@@ -223,6 +227,42 @@ function drawPickup(ctx: CanvasRenderingContext2D, pk: Pickup, camX: number) {
   ctx.fillStyle = "#ffd447";
   ctx.fillRect(0, 16, 4, 6);
   ctx.restore();
+}
+
+// A rolled prayer scroll that spills out of a shattered Ten
+// Commandments block. Once on the ground it gently bobs until the
+// player walks into it, which opens the Bible trivia modal.
+function drawPrayerScroll(
+  ctx: CanvasRenderingContext2D,
+  pk: Pickup,
+  x: number,
+) {
+  const bobY = pk.onGround ? Math.sin(pk.bob) * 2 : 0;
+  const y = pk.pos.y + bobY;
+  const w = pk.w;
+  const h = pk.h;
+  // Soft golden halo so it reads as a pickup.
+  ctx.fillStyle = "rgba(255, 212, 71, 0.45)";
+  ctx.beginPath();
+  ctx.arc(x + w / 2, y + h / 2, 18, 0, Math.PI * 2);
+  ctx.fill();
+  // Parchment body
+  ctx.fillStyle = "#f2e2b2";
+  ctx.fillRect(x + 2, y + 4, w - 4, h - 8);
+  ctx.strokeStyle = "#111";
+  ctx.lineWidth = 2;
+  ctx.strokeRect(x + 2, y + 4, w - 4, h - 8);
+  // Scroll end-caps (rolled edges)
+  ctx.fillStyle = "#8a5a2a";
+  ctx.fillRect(x, y + 2, w, 6);
+  ctx.fillRect(x, y + h - 8, w, 6);
+  ctx.strokeStyle = "#4a2f13";
+  ctx.strokeRect(x, y + 2, w, 6);
+  ctx.strokeRect(x, y + h - 8, w, 6);
+  // Tiny red cross to signal "prayer"
+  ctx.fillStyle = "#ba0c2f";
+  ctx.fillRect(x + w / 2 - 1, y + 10, 2, 8);
+  ctx.fillRect(x + w / 2 - 4, y + 13, 8, 2);
 }
 
 // A Ten Commandments stone-tablet "?"-block. The player must head-bump

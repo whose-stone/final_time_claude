@@ -74,7 +74,7 @@ export interface Pickup {
   w: number;
   h: number;
   alive: boolean;
-  kind: "bible" | "penpaper";
+  kind: "bible" | "penpaper" | "prayer";
   // For pen+paper pickups: which of the level's graded questions this one
   // opens (0-indexed).
   questionIndex?: number;
@@ -86,6 +86,11 @@ export interface Pickup {
   // Frame counter for the block's "just got hit" animation (short upward
   // nudge before settling back into place). Only used by bible blocks.
   hitTicks?: number;
+  // Prayer scrolls shoot out of a shattered Ten Commandments block with
+  // their own velocity + gravity, then bounce/settle on the ground. The
+  // player walks into one to open the Bible trivia question.
+  vel?: Vec2;
+  onGround?: boolean;
 }
 
 export interface Particle {
